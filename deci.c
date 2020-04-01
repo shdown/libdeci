@@ -82,7 +82,7 @@ bool deci_sub(
 
     // Uncomplement.
     //
-    // Aassuming what we currently have in (wa ... wa_end) is, in big-endian (that is, written the
+    // Assuming what we currently have in (wa ... wa_end) is, in big-endian (that is, written the
     // way we humans write it, from the most significant "digit" to the least significant "digit"),
     //   A_1  A_2  A_3  ...  A_n,
     // we need to calculate

@@ -27,7 +27,7 @@
 // This has nothing to do with the actual endianness of the hardware, which we are independent of.
 //
 // Now, for normalization. To normalize a (deci_UWORD*) span means simply to remove the leading
-// zeroes, thus possibly decrementing the "right bound" by some amount.
+// zeroes, thus possibly decreasing its "right bound" by some amount.
 //
 // Normalization is not *required*, but obviously everything will work faster if the numbers are
 // normalized -- you just reduce the size of the spans that deci_* function work on.
