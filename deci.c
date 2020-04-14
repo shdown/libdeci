@@ -1,3 +1,22 @@
+/*
+ * Copyright (C) 2020  libdeci developers
+ *
+ * This file is part of libdeci.
+ *
+ * libdeci is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * libdeci is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with libdeci.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 #include "deci.h"
 
 #define SWAP_UWORD_PTR(X_, Y_) \
@@ -58,12 +77,10 @@ ret_noext:
     return false;
 }
 
-bool deci_sub(
+bool deci_sub_raw(
         deci_UWORD *wa, deci_UWORD *wa_end,
         deci_UWORD *wb, deci_UWORD *wb_end)
 {
-    deci_UWORD *const wa_orig = wa;
-
     bool borrow = false;
     for (; wb != wb_end; ++wb, ++wa)
         borrow = sbb(wa, *wb, borrow);
@@ -79,59 +96,19 @@ bool deci_sub(
         }
         *wa = DECI_BASE - 1;
     }
+    return true;
+ret_noneg:
+    return false;
+}
 
-    // Uncomplement.
-    //
-    // Assuming what we currently have in (wa ... wa_end) is, in big-endian (that is, written the
-    // way we humans write it, from the most significant "digit" to the least significant "digit"),
-    //   A_1  A_2  A_3  ...  A_n,
-    // we need to calculate
-    //
-    //   001  000  000  000  ...  000
-    // -
-    //        A_1  A_2  A_3  ...  A_n
-    //  ------------------------------
-    //
-    // Why? Well, at this point, we have the "borrow" flag set after performing the subtracting over
-    // all available "digits", so
-    //
-    //   (1)
-    //  000  X_1  X_2  X_3  ...  X_n
-    // -
-    //  000  Y_1  Y_2  Y_3  ...  Y_n
-    //  ------------------------------
-    //  000  A_1  A_2  A_3  ...  A_n
-    //
-    // Let T =
-    //    1  000  000  000  ... 000,
-    // that is, a single "digit" with value of 1 and n "digits" with value of 0. We have
-    //   (X + T) - Y = A,
-    // so
-    //   Y - X = T - A.
-    //
-    // In order to calculate that value, we need to:
-    //
-    //   1. Skip to the least-significant non-zero digit (because subtracting zero from zero just
-    //      produces zero, neither altering the value nor requiring borrow). There *has* to be a
-    //      non-zero digit somewhere, otherwise the result of the subtraction simply would not
-    //      fit into the (wa ... wa_end) range, which is impossible.
-    //
-    //   2. Borrow one from the higher "digit" in order to subtract non-zero from zero. If we
-    //      had a non-zero "digit" with value of 'v', the result is 'DECI_BASE - v'.
-    //
-    //   3. For each "next" (more significant) "digit", perform subtraction with the borrow of 1:
-    //      if we had a "digit" with value of 'v', the result is 'DECI_BASE - 1 - v'.
-    wa = wa_orig;
+void deci_uncomplement(deci_UWORD *wa, deci_UWORD *wa_end)
+{
     for (; *wa == 0; ++wa)
         ;
     *wa = DECI_BASE - *wa;
     ++wa;
     for (; wa != wa_end; ++wa)
         *wa = DECI_BASE - 1 - *wa;
-    return true;
-
-ret_noneg:
-    return false;
 }
 
 deci_UWORD deci_mul_uword(deci_UWORD *wa, deci_UWORD *wa_end, deci_UWORD b)

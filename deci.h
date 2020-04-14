@@ -1,3 +1,22 @@
+/*
+ * Copyright (C) 2020  libdeci developers
+ *
+ * This file is part of libdeci.
+ *
+ * libdeci is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * libdeci is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with libdeci.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 #pragma once
 
 #include <stddef.h>
@@ -27,7 +46,7 @@
 // This has nothing to do with the actual endianness of the hardware, which we are independent of.
 //
 // Now, for normalization. To normalize a (deci_UWORD*) span means simply to remove the leading
-// zeroes, thus possibly decreasing its "right bound" by some amount.
+// zeroes, thus possibly decrementing its "right bound" by some amount.
 //
 // Normalization is not *required*, but obviously everything will work faster if the numbers are
 // normalized -- you just reduce the size of the spans that deci_* function work on.
@@ -48,11 +67,11 @@
 #   endif
 #endif
 
-#if ! defined(DECI_INHEADER)
+#if ! defined(DECI_UNUSED)
 #   if __GNUC__ >= 2
-#       define DECI_INHEADER static inline __attribute__((unused))
+#       define DECI_UNUSED __attribute__((unused))
 #   else
-#       define DECI_INHEADER static inline
+#       define DECI_UNUSED /*nothing*/
 #   endif
 #endif
 
@@ -65,8 +84,18 @@ typedef uint32_t deci_UWORD;
 typedef int32_t  deci_SWORD;
 typedef uint64_t deci_DOUBLE_UWORD;
 typedef int64_t  deci_DOUBLE_SWORD;
-enum { DECI_BASE_LOG = 9 };
-static const deci_UWORD DECI_BASE = 1000000000;
+#define DECI_BASE_LOG 9
+DECI_UNUSED static const deci_UWORD DECI_BASE = 1000000000;
+#define DECI_FOR_EACH_TENPOW(X) \
+    X(0, 1) \
+    X(1, 10) \
+    X(2, 100) \
+    X(3, 1000) \
+    X(4, 10000) \
+    X(5, 100000) \
+    X(6, 1000000) \
+    X(7, 10000000) \
+    X(8, 100000000)
 
 #else
 
@@ -74,8 +103,13 @@ typedef uint16_t deci_UWORD;
 typedef int16_t  deci_SWORD;
 typedef uint32_t deci_DOUBLE_UWORD;
 typedef int32_t  deci_DOUBLE_SWORD;
-enum { DECI_BASE_LOG = 4 };
-static const deci_UWORD DECI_BASE = 10000;
+#define DECI_BASE_LOG 4
+DECI_UNUSED static const deci_UWORD DECI_BASE = 10000;
+#define DECI_FOR_EACH_TENPOW(X) \
+    X(0, 1) \
+    X(1, 10) \
+    X(2, 100) \
+    X(3, 1000) \
 
 #endif
 
@@ -98,6 +132,44 @@ bool deci_add(
 //
 // Assumes (wa_end - wa) >= (wb_end - wb); otherwise, the behavior is undefined.
 //
+// Returns the value of the borrow flag after the subtraction; in other words,
+//
+//    * if return value is false, the value stored in (wa ... wa_end) is the correct result;
+//
+//    * if return value is true, the subtraction underflowed, and what was stored in (wa ... wa_end)
+//      is the ten's complement value of the result, that is, the value of
+//          {1 000 ... 000} + result,
+//      where:
+//
+//          * the {1 000 ... 000} value is in big-decimal notation, that is, the word with value of
+//            1 is the *most* significant one, not the *least* significant;
+//
+//          * the number of '000' words in the minuend is equal to (wa_end - wa);
+//
+//          * 'result' is negative (since the subtraction underflowed).
+//
+//      Use 'deci_uncomplement()' to convert the ten's complement value of the negative result to
+//      its absolute value.
+bool deci_sub_raw(
+        deci_UWORD *wa, deci_UWORD *wa_end,
+        deci_UWORD *wb, deci_UWORD *wb_end);
+
+// Performs the following subtraction, writing the result into (wa ... wa_end):
+//     {1 000 ... 000} - (wa ... wa_end),
+// where:
+//     * the {1 000 ... 000} value is in big-decimal notation, that is, the word with value of
+//       1 is the *most* significant one, not the *least* significant;
+//
+//     * the number of '000' words in the minuend is equal to (wa_end - wa).
+//
+// Assumes that (wa ... wa_end) does not represent the value of zero, i.e., that it contains at
+// least one non-zero word; otherwise, the behavior is undefined.
+void deci_uncomplement(deci_UWORD *wa, deci_UWORD *wa_end);
+
+// Subtracts two (deci_UWORD*) spans, writing the result into (wa ... wa_end).
+//
+// Assumes (wa_end - wa) >= (wb_end - wb); otherwise, the behavior is undefined.
+//
 // If the borrow flag after the subtraction is false, this function returns false; otherwise, it
 // performs the "uncomplement" operation to recover the negated result of the subtraction, and
 // returns true.
@@ -108,9 +180,16 @@ bool deci_add(
 //
 //    * if the return value is true, the result is actually negative, and what was stored in
 //      (wa ... wa_end) is its absolute value.
+static inline DECI_UNUSED
 bool deci_sub(
         deci_UWORD *wa, deci_UWORD *wa_end,
-        deci_UWORD *wb, deci_UWORD *wb_end);
+        deci_UWORD *wb, deci_UWORD *wb_end)
+{
+    const bool underflow = deci_sub_raw(wa, wa_end, wb, wb_end);
+    if (underflow)
+        deci_uncomplement(wa, wa_end);
+    return underflow;
+}
 
 // Multiplies a (deci_UWORD*) span by a deci_UWORD.
 //
@@ -181,7 +260,8 @@ void deci_mod(
         deci_UWORD *wb, deci_UWORD *wb_end);
 
 // Checks if a (deci_UWORD*) span represents the value of zero, i.e., that all its words are zero.
-DECI_INHEADER bool deci_is_zero(deci_UWORD *wa, deci_UWORD *wa_end)
+static inline DECI_UNUSED
+bool deci_is_zero(deci_UWORD *wa, deci_UWORD *wa_end)
 {
     for (; wa != wa_end; ++wa)
         if (*wa)
@@ -194,7 +274,8 @@ DECI_INHEADER bool deci_is_zero(deci_UWORD *wa, deci_UWORD *wa_end)
 // and
 //     (wb_end - N, wb_end),
 // where N = (wa_end - wa).
-DECI_INHEADER int deci_compare(
+static inline DECI_UNUSED
+int deci_compare(
         deci_UWORD *wa_end, deci_UWORD *wa,
         deci_UWORD *wb_end,
         int if_less, int if_eq, int if_greater)
@@ -210,14 +291,13 @@ DECI_INHEADER int deci_compare(
 
 // Returns pointer to the last non-zero word of the (deci_UWORD*) span represented by
 // (wa ... wa_end), or, if there is none, returns (wa).
-DECI_INHEADER deci_UWORD *deci_normalize(deci_UWORD *wa, deci_UWORD *wa_end)
+static inline DECI_UNUSED
+deci_UWORD *deci_normalize(deci_UWORD *wa, deci_UWORD *wa_end)
 {
     while (wa_end != wa) {
         --wa_end;
-        if (*wa_end) {
-            ++wa_end;
-            break;
-        }
+        if (*wa_end)
+            return ++wa_end;
     }
     return wa_end;
 }
@@ -229,7 +309,8 @@ DECI_INHEADER deci_UWORD *deci_normalize(deci_UWORD *wa, deci_UWORD *wa_end)
 //
 // So let's write the loops manually.
 
-DECI_INHEADER void deci_zero_out(deci_UWORD *w, size_t n)
+static inline DECI_UNUSED
+void deci_zero_out(deci_UWORD *w, size_t n)
 {
     while (n) {
         --n;
@@ -237,7 +318,8 @@ DECI_INHEADER void deci_zero_out(deci_UWORD *w, size_t n)
     }
 }
 
-DECI_INHEADER void deci_copy_backward(deci_UWORD *dst, const deci_UWORD *src, size_t n)
+static inline DECI_UNUSED
+void deci_copy_backward(deci_UWORD *dst, const deci_UWORD *src, size_t n)
 {
     while (n) {
         --n;
@@ -245,19 +327,21 @@ DECI_INHEADER void deci_copy_backward(deci_UWORD *dst, const deci_UWORD *src, si
     }
 }
 
-DECI_INHEADER void deci_copy_forward(deci_UWORD *dst, const deci_UWORD *src, size_t n)
+static inline DECI_UNUSED
+void deci_copy_forward(deci_UWORD *dst, const deci_UWORD *src, size_t n)
 {
-    deci_UWORD *dst_end = dst + n;
-    while (dst != dst_end)
-        *dst++ = *src++;
+    for (size_t i = 0; i < n; ++i)
+        dst[i] = src[i];
 }
 
-DECI_INHEADER void deci_memcpy(deci_UWORD *dst, const deci_UWORD *src, size_t n)
+static inline DECI_UNUSED
+void deci_memcpy(deci_UWORD *dst, const deci_UWORD *src, size_t n)
 {
     deci_copy_backward(dst, src, n);
 }
 
-DECI_INHEADER void deci_memmove(deci_UWORD *dst, const deci_UWORD *src, size_t n)
+static inline DECI_UNUSED
+void deci_memmove(deci_UWORD *dst, const deci_UWORD *src, size_t n)
 {
     if (((uintptr_t) dst) < ((uintptr_t) src))
         deci_copy_forward(dst, src, n);
