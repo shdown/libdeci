@@ -19,9 +19,9 @@
 
 #include "deci.h"
 
-#define SWAP_UWORD_PTR(X_, Y_) \
+#define SWAP(Type_, X_, Y_) \
     do { \
-        deci_UWORD *swap_tmp__ = (X_); \
+        Type_ swap_tmp__ = (X_); \
         (X_) = (Y_); \
         (Y_) = swap_tmp__; \
     } while (0)
@@ -62,19 +62,16 @@ bool deci_add(
         carry = adc(wa, *wb, carry);
 
     if (!carry)
-        goto ret_noext;
+        return false;
+
     for (; wa != wa_end; ++wa) {
-        const deci_UWORD x = *wa + 1;
-        if (x != DECI_BASE) {
-            *wa = x;
-            goto ret_noext;
+        if (*wa != DECI_BASE - 1) {
+            ++*wa;
+            return false;
         }
         *wa = 0;
     }
     return true;
-
-ret_noext:
-    return false;
 }
 
 bool deci_sub_raw(
@@ -86,19 +83,16 @@ bool deci_sub_raw(
         borrow = sbb(wa, *wb, borrow);
 
     if (!borrow)
-        goto ret_noneg;
+        return false;
 
     for (; wa != wa_end; ++wa) {
-        const deci_UWORD v = *wa;
-        if (v) {
-            *wa = v - 1;
-            goto ret_noneg;
+        if (*wa) {
+            --*wa;
+            return false;
         }
         *wa = DECI_BASE - 1;
     }
     return true;
-ret_noneg:
-    return false;
 }
 
 void deci_uncomplement(deci_UWORD *wa, deci_UWORD *wa_end)
@@ -109,17 +103,6 @@ void deci_uncomplement(deci_UWORD *wa, deci_UWORD *wa_end)
     ++wa;
     for (; wa != wa_end; ++wa)
         *wa = DECI_BASE - 1 - *wa;
-}
-
-deci_UWORD deci_mul_uword(deci_UWORD *wa, deci_UWORD *wa_end, deci_UWORD b)
-{
-    deci_UWORD carry = 0;
-    for (; wa != wa_end; ++wa) {
-        const deci_DOUBLE_UWORD x = *wa * ((deci_DOUBLE_UWORD) b) + carry;
-        *wa = x % DECI_BASE;
-        carry = x / DECI_BASE;
-    }
-    return carry;
 }
 
 // Adds ((wa ... wa_end) times 'b') to (out ... implied_out_end), where 'implied_out_end' is not
@@ -159,88 +142,28 @@ void deci_mul(
 {
     // Our loop is optimized for long 'a' and short 'b', so swap if 'a' is shorter.
     if ((wa_end - wa) < (wb_end - wb)) {
-        SWAP_UWORD_PTR(wa, wb);
-        SWAP_UWORD_PTR(wa_end, wb_end);
+        SWAP(deci_UWORD *, wa, wb);
+        SWAP(deci_UWORD *, wa_end, wb_end);
     }
     for (; wb != wb_end; ++wb, ++out)
         // Safe to call: 'wa' != 'wa_end' because length(a) >= length(b) > 0.
         long_mul_round(wa, wa_end, *wb, out);
 }
 
-deci_UWORD deci_divmod_uword(deci_UWORD *wa, deci_UWORD *wa_end, deci_UWORD b)
-{
-    deci_UWORD carry = 0;
-    while (wa_end != wa) {
-        --wa_end;
+// ---------------------------------------------------------------------------------------
+// For more info on the long division algorithm we use, see:
+//  * Knuth section 4.3.1 algorithm D
+//  * https://skanthak.homepage.t-online.de/division.html
+//  * https://surface.syr.edu/cgi/viewcontent.cgi?article=1162&context=eecs_techreports
+// ---------------------------------------------------------------------------------------
 
-        const deci_DOUBLE_UWORD x = *wa_end + DECI_BASE * (deci_DOUBLE_UWORD) carry;
-        *wa_end = x / b;
-        carry = x % b;
-    }
-    return carry;
-}
-
-deci_UWORD deci_mod_uword(deci_UWORD *wa, deci_UWORD *wa_end, deci_UWORD b)
-{
-    deci_UWORD carry = 0;
-    while (wa_end != wa) {
-        --wa_end;
-
-        const deci_DOUBLE_UWORD x = *wa_end + DECI_BASE * (deci_DOUBLE_UWORD) carry;
-        carry = x % b;
-    }
-    return carry;
-}
-
-// Checks if (wx ... wx_end) is less than ('y' times (wz ... wz_end)).
+// Subtracts from (wx ... wx_end) the value of ('y' times (wz ... wz_end)), modifying the former.
 //
-// Assumes that (wx ... wx_end) and (wz ... wz_end) are normalized.
+// Return the "borrow" word: the word that would have to be subtracted from (*wz_end), if it was
+// legal to access.
 //
-// Assumes that (wx_end - wx) >= (wz_end - wz). Note that this assumption actually makes some sense:
-// otherwise, the result would be (y != 0), not depending on (wx ... wx_end) or (wz ... wz_end) at
-// all.
-static inline bool x_less_yz(
-        deci_UWORD *wx, deci_UWORD *wx_end,
-        deci_UWORD y,
-        deci_UWORD *wz, deci_UWORD *wz_end)
-{
-    deci_UWORD mul_carry = 0;
-    bool sub_borrow = false;
-
-    for (; wz != wz_end; ++wz, ++wx) {
-        const deci_DOUBLE_UWORD x = (*wz * (deci_DOUBLE_UWORD) y) + mul_carry;
-        const deci_UWORD r = x % DECI_BASE;
-        mul_carry = x / DECI_BASE;
-        sub_borrow = *wx < (r + sub_borrow);
-    }
-
-    if (mul_carry) {
-        if (wx == wx_end)
-            goto less;
-        sub_borrow = *wx < (mul_carry + sub_borrow);
-        ++wx;
-    }
-
-    if (!sub_borrow)
-        goto not_less;
-    for (; wx != wx_end; ++wx)
-        if (*wx)
-            goto not_less;
-less:
-    return true;
-not_less:
-    return false;
-}
-
-// Subtracts ('y' times (wz ... wz_end)) from (wx ... wx_end), modifying (wx ... wx_end).
-//
-// Assumes that (wx ... wx_end) and (wz ... wz_end) are normalized.
-//
-// Assumes that (wx_end - wx) >= (wz_end - wz).
-//
-// Assumes !(x_less_yz(wx, wx_end, y, wz, wz_end)), i.e., that the result of subtraction is
-// non-negative.
-static inline void x_sub_yz(
+// Assumes 0 <= ((wx_end - wx) - (wz_end - wz)) <= 1.
+static deci_UWORD subtract_scaled_raw(
         deci_UWORD *wx, deci_UWORD *wx_end,
         deci_UWORD y,
         deci_UWORD *wz, deci_UWORD *wz_end)
@@ -255,26 +178,24 @@ static inline void x_sub_yz(
         sub_borrow = sbb(wx, r, sub_borrow);
     }
 
-    if (mul_carry) {
-        sub_borrow = sbb(wx, mul_carry, sub_borrow);
-        ++wx;
+    if (wx == wx_end) {
+        return mul_carry + sub_borrow;
+    } else {
+        return sbb(wx, mul_carry, sub_borrow);
     }
-
-    if (sub_borrow) {
-        for (; *wx == 0; ++wx)
-            *wx = DECI_BASE - 1;
-        --*wx;
-    }
-
-    (void) wx_end; // unused
 }
 
-// Returns the two most significant words of (implied_w ... w_end) combined, that is, the value of
-//     hi * DECI_BASE + lo,
-// where hi = w_end[-1], lo = w_end[-2].
-static inline deci_DOUBLE_UWORD high2(deci_UWORD *w_end)
+static deci_UWORD estimate_q(
+        deci_UWORD r1, deci_UWORD r2, deci_UWORD r3,
+        deci_UWORD b1, deci_UWORD b2)
 {
-    return (w_end[-1] * (deci_DOUBLE_UWORD) DECI_BASE) + w_end[-2];
+    const deci_QUAD_UWORD r123 = deci_q_from_3w(r1, r2, r3);
+
+    const deci_DOUBLE_UWORD b12 = (b1 * (deci_DOUBLE_UWORD) DECI_BASE) + b2;
+
+    const deci_DOUBLE_UWORD q = deci_q_div_d_to_d(r123, b12);
+
+    return q < (DECI_BASE - 1) ? q : (DECI_BASE - 1);
 }
 
 // Performs a round of long division:
@@ -282,127 +203,109 @@ static inline deci_DOUBLE_UWORD high2(deci_UWORD *w_end)
 // 1. Finds a minimal 'q', 0 <= q < DECI_BASE, such that
 //      ((wb ... wb_end) times 'q') is not greater than (wr ... wr_end).
 //
-// 2. Subtracts ((wb ... wb_end) times 'q') from (wr ... wr_end), modifying (wr ... wr_end).
+// 2. Subtracts ((wb ... wb_end) times 'q') from (wr ... wr_end), modifying the latter.
 //
 // 3. Returns 'q'.
 //
 // Assumes that:
 //
-//  * (wr ... wr_end) and (wb ... wb_end) are normalized.
+//  * (wb ... wb_end) is normalized;
 //
-//  * (wb_end - wb) >= 2. Note that if it has length of 1, you should use 'deci_divmod_uword()' or
-//     'deci_mod_uword()', and if it has length of 0, you are dividing by zero -- oops.
+//  * 0 <= ((wr_end - wr) - (wb_end - wb)) <= 1;
 //
-//  * The result of division actually fits into one 'deci_UWORD', that is,
-//      ((wb ... wb_end) times 'DECI_BASE') is greater than (wr ... wr_end).
-static inline deci_UWORD long_div_round(
+//  * the result of the division actually fits into one word: in other words, that
+//      ((wb ... wb_end) times 'DECI_BASE') _is_ greater than (wr ... wr_end);
+//
+//  * (wb_end - wb) >= 2. Note that if it's 1, you should use 'deci_divmod_uword()' or
+//      'deci_mod_uword()', and if it's 0, you are dividing by zero -- oops.
+static deci_UWORD long_div_round(
         deci_UWORD *wr, deci_UWORD *wr_end,
         deci_UWORD *wb, deci_UWORD *wb_end)
 {
     const size_t nwr = wr_end - wr;
     const size_t nwb = wb_end - wb;
-    if (nwr < nwb)
-        return 0;
 
-    // Two most significant words of (wr ... wr_end).
-    //
-    // Since (wr_end - wr) >= (wb_end - wb) >= 2, this is OK.
-    const deci_DOUBLE_UWORD r_hi = high2(wr_end);
+    deci_UWORD *aligned_wr_end = wr_end;
+    deci_UWORD r_hi = 0;
+    if (nwr != nwb)
+        r_hi = *--aligned_wr_end;
+    deci_UWORD q = estimate_q(
+        r_hi,
+        aligned_wr_end[-1],
+        aligned_wr_end[-2],
+        wb_end[-1],
+        wb_end[-2]);
 
-    // If (nwr == nwb), then use two most significant words of (wb ... wb_end).
-    //
-    // Otherwise, (nwb < nwr) as we have already checked for (nwr < nwb). But if that's the case,
-    // then (nwb == nwr - 1) must hold, as the result of the division must fit into one word. So
-    // let's just use the value of (wb_end[-1]) and pretend the word corresponding in significance
-    // to (wr_end[-1]) was zero.
-    const deci_DOUBLE_UWORD b_hi = (nwr == nwb) ? high2(wb_end) : wb_end[-1];
-
-    // So, we are dividing something which has two most significant words of 'r_hi', by something
-    // which has two most significant words of 'b_hi'. Using big-endian notation, we are dividing
-    //     r_hi  ??  ??  ...  ??
-    // by
-    //     b_hi  ??  ??  ...  ??.
-    //
-    // Let's calculate upper- and lower bounds on the quotient.
-    const deci_DOUBLE_UWORD rbound_raw = (r_hi + 1) / b_hi + 1;
-    deci_UWORD rbound = rbound_raw < DECI_BASE ? rbound_raw : DECI_BASE;
-    deci_UWORD lbound = r_hi / (b_hi + 1);
-
-    // Binary search on the quotient.
-    // Loop invariant: (lbound <= q < rbound), so our result will be in 'lbound'.
-    while (rbound - lbound > 1) {
-        const deci_UWORD mid = (lbound + rbound) / 2;
-        if (x_less_yz(wr, wr_end, mid, wb, wb_end)) {
-            rbound = mid;
-        } else {
-            lbound = mid;
-        }
-    }
-    x_sub_yz(wr, wr_end, lbound, wb, wb_end);
-    return lbound;
-}
-
-static void single_word_result(deci_UWORD *wr, deci_UWORD *wr_end, deci_UWORD result)
-{
-    if (wr != wr_end)
-        *wr++ = result;
-    for (; wr != wr_end; ++wr)
-        *wr = 0;
-}
-
-void deci_divmod(
-    deci_UWORD *wa, deci_UWORD *wa_end,
-    deci_UWORD *wb, deci_UWORD *wb_end,
-    deci_UWORD *wr_end)
-{
-    wb_end = deci_normalize(wb, wb_end);
-
-    if ((wb_end - wb) == 1) {
-        const deci_UWORD rem = deci_divmod_uword(wa, wa_end, *wb);
-        single_word_result(
-            /*wr=*/wr_end - (wa_end - wa),
-            /*wr_end=*/wr_end,
-            /*result=*/rem);
-        return;
+    if (subtract_scaled_raw(wr, wr_end, q, wb, wb_end)) {
+        --q;
+        (void) deci_add(wr, wr_end, wb, wb_end);
     }
 
-    deci_UWORD *wr = wr_end;
-
-    while (wa_end != wa) {
-        --wa_end;
-
-        --wr;
-        *wr = *wa_end;
-
-        wr_end = deci_normalize(wr, wr_end);
-        *wa_end = long_div_round(
-            wr, wr_end,
-            wb, wb_end);
-    }
+    return q;
 }
 
-void deci_mod(
+deci_UWORD deci_divmod_unsafe(
     deci_UWORD *wa, deci_UWORD *wa_end,
     deci_UWORD *wb, deci_UWORD *wb_end)
 {
+    const size_t nwb = wb_end - wb;
+
+    deci_UWORD *r     = wa_end - nwb;
+    deci_UWORD *r_end = wa_end;
+
+    const deci_UWORD qhi = long_div_round(r, r_end, wb, wb_end);
+
+    while (r != wa) {
+        --r;
+        const deci_UWORD qlo = long_div_round(r, r_end, wb, wb_end);
+        *--r_end = qlo;
+    }
+    return qhi;
+}
+
+size_t deci_div(
+    deci_UWORD *wa, deci_UWORD *wa_end,
+    deci_UWORD *wb, deci_UWORD *wb_end)
+{
+    wa_end = deci_normalize(wa, wa_end);
     wb_end = deci_normalize(wb, wb_end);
 
-    if ((wb_end - wb) == 1) {
-        const deci_UWORD rem = deci_mod_uword(wa, wa_end, *wb);
-        single_word_result(
-            /*wr=*/wa,
-            /*wr_end=*/wa_end,
-            /*result=*/rem);
-        return;
+    const size_t nwa = wa_end - wa;
+    const size_t nwb = wb_end - wb;
+
+    if (nwa < nwb)
+        return 0;
+
+    if (nwb == 1) {
+        (void) deci_divmod_uword(wa, wa_end, *wb);
+        return nwa;
     }
 
-    deci_UWORD *wa_cur = wa_end;
-    while (wa_cur != wa) {
-        --wa_cur;
+    const deci_UWORD qhi = deci_divmod_unsafe(wa, wa_end, wb, wb_end);
+    const size_t delta = nwa - nwb;
+    deci_memmove(wa, wa + nwb, delta);
+    wa[delta] = qhi;
+    return delta + 1;
+}
 
-        wa_end = deci_normalize(wa_cur, wa_end);
-        (void) long_div_round(
-            wa_cur, wa_end,
-            wb, wb_end);
+size_t deci_mod(
+    deci_UWORD *wa, deci_UWORD *wa_end,
+    deci_UWORD *wb, deci_UWORD *wb_end)
+{
+    wa_end = deci_normalize(wa, wa_end);
+    wb_end = deci_normalize(wb, wb_end);
+
+    const size_t nwa = wa_end - wa;
+    const size_t nwb = wb_end - wb;
+
+    if (nwa < nwb)
+        return nwa;
+
+    if (nwb == 1) {
+        *wa = deci_mod_uword(wa, wa_end, *wb);
+        return 1;
     }
+
+    (void) deci_divmod_unsafe(wa, wa_end, wb, wb_end);
+    return nwb;
 }

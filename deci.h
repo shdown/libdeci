@@ -23,36 +23,37 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-// deci_* functions work on (deci_UWORD*) spans representing unsigned little-endian (see below) big
-// integers in base (DECI_BASE).
+// deci_* functions work on 'deci_UWORD *' spans representing unsigned little-endian (see below for
+// what it means exactly) big integers in base of 'DECI_BASE'.
 //
 // A (deci_UWORD*) span is a pair of pointers,
 //     deci_UWORD *wa
 // and
 //     deci_UWORD *wa_end,
 // also written as (wa ... wa_end), where wa[0], wa[1], ..., wa_end[-1] are defined and are less
-// than (DECI_BASE).
+// than 'DECI_BASE'.
 //
-// It is perfectly fine for a (deci_UWORD*) span to be empty, that is, be represented by
-// (ptr ... ptr), for some pointer ptr; such a span represents the value of zero.
+// It is perfectly fine for a 'deci_UWORD *' span to be empty, that is, be represented by
+// (ptr ... ptr), for some pointer 'ptr'; such a span represents the value of zero.
 //
-// In general, a (deci_UWORD*) span of (wa ... wa_end) represents the value of
+// In general, a 'deci_UWORD *' span of (wa ... wa_end) represents the value of
 //
 //     sum for each integer i in [0; wa_end - wa):
 //         wa[i] * DECI_BASE ^ i,
 //
-// where '^' means exponentiation, not xor. That's what we mean by "little-endian" -- that (wa[0])
-// is the *least* significant digit in base (DECI_BASE), and (wa_end[-1]) is the *most* significant.
+// where '^' means exponentiation, not xor. That's what we mean by "little-endian" -- that 'wa[0]'
+// is the *least* significant digit in base 'DECI_BASE', and 'wa_end[-1]' is the *most* significant.
 // This has nothing to do with the actual endianness of the hardware, which we are independent of.
 //
-// Now, for normalization. To normalize a (deci_UWORD*) span means simply to remove the leading
+// Now, for normalization. To normalize a 'deci_UWORD *' span means simply to remove the leading
 // zeroes, thus possibly decrementing its "right bound" by some amount.
 //
-// Normalization is not *required*, but obviously everything will work faster if the numbers are
-// normalized -- you just reduce the size of the spans that deci_* function work on.
+// Normalization is not *required* (except for 'deci_divmod_unsafe()'), but obviously everything
+// will work faster if the numbers are normalized -- you just reduce the size of the spans that
+// these functions work on.
 //
 // If you think about it, whenever you have some kind of a dynamic array, you usually can pop from
-// the back, but not from the front of it. For example, C's realloc() can truncate the buffer from
+// the back, but not from the front of it. For example, C's 'realloc()' can truncate the buffer from
 // the right, but not from the left. So, we would like the leading zeros to be at the back of a
 // span, not in the beginning -- that's why little-endian is chosen.
 //
@@ -80,11 +81,13 @@
 
 #if DECI_WE_ARE_64_BIT
 
-typedef uint32_t deci_UWORD;
-typedef int32_t  deci_SWORD;
-typedef uint64_t deci_DOUBLE_UWORD;
-typedef int64_t  deci_DOUBLE_SWORD;
+typedef uint32_t            deci_UWORD;
+typedef int32_t             deci_SWORD;
+typedef uint64_t            deci_DOUBLE_UWORD;
+typedef int64_t             deci_DOUBLE_SWORD;
 #define DECI_BASE_LOG 9
+#define DECI_WORD_BITS 32
+#define DECI_DOUBLE_WORD_BITS 64
 DECI_UNUSED static const deci_UWORD DECI_BASE = 1000000000;
 #define DECI_FOR_EACH_TENPOW(X) \
     X(0, 1) \
@@ -104,16 +107,18 @@ typedef int16_t  deci_SWORD;
 typedef uint32_t deci_DOUBLE_UWORD;
 typedef int32_t  deci_DOUBLE_SWORD;
 #define DECI_BASE_LOG 4
+#define DECI_WORD_BITS 16
+#define DECI_DOUBLE_WORD_BITS 32
 DECI_UNUSED static const deci_UWORD DECI_BASE = 10000;
 #define DECI_FOR_EACH_TENPOW(X) \
     X(0, 1) \
     X(1, 10) \
     X(2, 100) \
-    X(3, 1000) \
+    X(3, 1000)
 
 #endif
 
-// Adds two (deci_UWORD*) spans, writing the result into (wa ... wa_end).
+// Adds (wa ... wa_end) to (wb ... wb_end), writing the result into (wa ... wa_end).
 //
 // Assumes (wa_end - wa) >= (wb_end - wb); otherwise, the behavior is undefined.
 //
@@ -128,7 +133,7 @@ bool deci_add(
         deci_UWORD *wa, deci_UWORD *wa_end,
         deci_UWORD *wb, deci_UWORD *wb_end);
 
-// Subtracts two (deci_UWORD*) spans, writing the result into (wa ... wa_end).
+// Subtracts (wb ... wb_end) from (wa ... wa_end), writing the result into (wa ... wa_end).
 //
 // Assumes (wa_end - wa) >= (wb_end - wb); otherwise, the behavior is undefined.
 //
@@ -191,17 +196,27 @@ bool deci_sub(
     return underflow;
 }
 
-// Multiplies a (deci_UWORD*) span by a deci_UWORD.
+// Multiplies (wa ... wa_end) by 'b'.
 //
 // Assumes (b < DECI_BASE); otherwise, the behavior is undefined.
 //
 // Returns the most significant word of the result, writing the rest of the words into
 // (wa ... wa_end).
+static inline DECI_UNUSED
 deci_UWORD deci_mul_uword(
         deci_UWORD *wa, deci_UWORD *wa_end,
-        deci_UWORD b);
+        deci_UWORD b)
+{
+    deci_UWORD carry = 0;
+    for (; wa != wa_end; ++wa) {
+        const deci_DOUBLE_UWORD x = *wa * ((deci_DOUBLE_UWORD) b) + carry;
+        *wa = x % DECI_BASE;
+        carry = x / DECI_BASE;
+    }
+    return carry;
+}
 
-// Multiplies two (deci_UWORD*) spans, writing the result into
+// Multiplies (wa ... wa_end) by (wb ... wb_end), writing the result into
 //     (out ... out + N),
 // where N = (wa_end - wa) + (wb_end - wb).
 //
@@ -212,54 +227,82 @@ void deci_mul(
         deci_UWORD *wb, deci_UWORD *wb_end,
         deci_UWORD *out);
 
-// Divides a (deci_UWORD*) span by a deci_UWORD, writing the quotient into (wa ... wa_end), and
-// returning the remainder.
+// Divides (wa ... wa_end) by 'b', writing the quotient into (wa ... wa_end), and returning the
+// remainder.
 //
 // Assumes (0 < b < DECI_BASE); otherwise, the behavior is undefined.
+static inline DECI_UNUSED
 deci_UWORD deci_divmod_uword(
         deci_UWORD *wa, deci_UWORD *wa_end,
-        deci_UWORD b);
+        deci_UWORD b)
+{
+    deci_UWORD carry = 0;
+    while (wa_end != wa) {
+        --wa_end;
 
-// Returns the remainder of division of a (deci_UWORD*) span by a deci_UWORD.
+        const deci_DOUBLE_UWORD x = *wa_end + DECI_BASE * (deci_DOUBLE_UWORD) carry;
+        *wa_end = x / b;
+        carry = x % b;
+    }
+    return carry;
+}
+
+// Returns the remainder of division of (wa ... wa_end) by 'b'.
 //
 // Assumes (0 < b < DECI_BASE); otherwise, the behavior is undefined.
+static inline DECI_UNUSED
 deci_UWORD deci_mod_uword(
         deci_UWORD *wa, deci_UWORD *wa_end,
-        deci_UWORD b);
+        deci_UWORD b)
+{
+    deci_UWORD carry = 0;
+    while (wa_end != wa) {
+        --wa_end;
 
-// Divides one (deci_UWORD*) span by another (deci_UWORD*) span, writing:
-//    * the quotient into (wa ... wa_end);
-//    * the remainder into (wr_end - N, wr_end), where N = (wa_end - wa).
-//
-// <WARNING>
-//     NOTE THAT THE SIZE OF THE BUFFER **BEFORE** (wr_end) MUST BE
-//         (wa_end - wa),
-//     NOT
-//         (wb_end - wb) !!!
-// </WARNING>
-//
-// The reason for this is that this span is used as a temporary buffer during the division process,
-// and the fact that in the end it happens to be the remainder is merely a nice side effect.
-//
-// In some way, it even make sense: if A % B = R, then we have not only R < B, but also R <= A.
-//
-// Assumes that (wb ... wb_end) does not represent the value of zero, i.e., that it contains at
-// least one non-zero word; otherwise, the behavior is undefined.
-void deci_divmod(
-        deci_UWORD *wa, deci_UWORD *wa_end,
-        deci_UWORD *wb, deci_UWORD *wb_end,
-        deci_UWORD *wr_end);
+        const deci_DOUBLE_UWORD x = *wa_end + DECI_BASE * (deci_DOUBLE_UWORD) carry;
+        carry = x % b;
+    }
+    return carry;
+}
 
-// Calculates the remainder of division of one (deci_UWORD*) span by another (deci_UWORD*) span,
-// writing the result into (wa ... wa_end).
+// Divides (wa ... wa_end) by (wb ... wb_end).
 //
-// Assumes that (wb ... wb_end) does not represent the value of zero, i.e., that it contains at
-// least one non-zero word; otherwise, the behavior is undefined.
-void deci_mod(
+// Writes the remainder into (wa ... wa + N), where N = (wb_end - wb).
+//
+// Returns the most significant word of the quotient, writing the rest of the words into
+// (wa + N ... wa_end).
+//
+// Assumes that:
+//
+//   * (wb ... wb_end) is normalized;
+//
+//   * (wa_end - wa) >= N >= 2. Note that if N == 1, you should use either 'deci_divmod_uword' or
+//       'deci_mod_uword'; and if N == 0, you are dividing by zero -- oops.
+deci_UWORD deci_divmod_unsafe(
         deci_UWORD *wa, deci_UWORD *wa_end,
         deci_UWORD *wb, deci_UWORD *wb_end);
 
-// Checks if a (deci_UWORD*) span represents the value of zero, i.e., that all its words are zero.
+// Divides (wa ... wa_end) by (wb ... wb_end).
+//
+// The quotient is written into (wa ... wa + N), where N is the return value, N <= (wa_end - wa).
+// The value of (wa + N ... wa_end) after this function returns is undefined.
+//
+// Assumes that (wb ... wb_end) does not represent the value of zero.
+size_t deci_div(
+        deci_UWORD *wa, deci_UWORD *wa_end,
+        deci_UWORD *wb, deci_UWORD *wb_end);
+
+// Divides (wa ... wa_end) by (wb ... wb_end).
+//
+// The remainder is written into (wa ... wa + N), where N is the return value, N <= (wa_end - wa).
+// The value of (wa + N ... wa_end) after this function returns is undefined.
+//
+// Assumes that (wb ... wb_end) does not represent the value of zero.
+size_t deci_mod(
+        deci_UWORD *wa, deci_UWORD *wa_end,
+        deci_UWORD *wb, deci_UWORD *wb_end);
+
+// Checks if (wa ... wa_end) represents the value of zero, i.e., that all its words are zero.
 static inline DECI_UNUSED
 bool deci_is_zero(deci_UWORD *wa, deci_UWORD *wa_end)
 {
@@ -269,28 +312,36 @@ bool deci_is_zero(deci_UWORD *wa, deci_UWORD *wa_end)
     return true;
 }
 
-// Compares two (deci_UWORD*) spans of equal size, namely,
-//     (wa ... wa_end)
-// and
-//     (wb_end - N, wb_end),
-// where N = (wa_end - wa).
+// Checks if (wa ... wa + n) represents the value of zero, i.e., that all its words are zero.
 static inline DECI_UNUSED
-int deci_compare(
-        deci_UWORD *wa_end, deci_UWORD *wa,
-        deci_UWORD *wb_end,
+bool deci_is_zero_n(deci_UWORD *wa, size_t n)
+{
+    for (size_t i = 0; i < n; ++i)
+        if (wa[i])
+            return false;
+    return true;
+}
+
+// Compares (wa ... wa + n) and (wb ... wb + n), returning:
+//   * 'if_less' if the former is less than the latter;
+//   * 'if_eq' if the former is equal to the latter;
+//   * 'if_greater' if the former is greater than the latter.
+static inline DECI_UNUSED
+int deci_compare_n(
+        deci_UWORD *wa, deci_UWORD *wb, size_t n,
         int if_less, int if_eq, int if_greater)
 {
-    while (wa_end != wa) {
-        const deci_UWORD x = *--wa_end;
-        const deci_UWORD y = *--wb_end;
+    while (n) {
+        --n;
+        const deci_UWORD x = wa[n];
+        const deci_UWORD y = wb[n];
         if (x != y)
             return x < y ? if_less : if_greater;
     }
     return if_eq;
 }
 
-// Returns pointer to the last non-zero word of the (deci_UWORD*) span represented by
-// (wa ... wa_end), or, if there is none, returns (wa).
+// Returns pointer to the last non-zero word of (wa ... wa_end), or, if there is none, returns 'wa'.
 static inline DECI_UNUSED
 deci_UWORD *deci_normalize(deci_UWORD *wa, deci_UWORD *wa_end)
 {
@@ -302,20 +353,59 @@ deci_UWORD *deci_normalize(deci_UWORD *wa, deci_UWORD *wa_end)
     return wa_end;
 }
 
+// Returns the index of the last non-zero word of (wa ... wa + n), or, if there is none, returns 0.
+static inline DECI_UNUSED
+size_t deci_normalize_n(deci_UWORD *wa, size_t n)
+{
+    while (n) {
+        --n;
+        if (wa[n])
+            return ++n;
+    }
+    return n;
+}
+
+// Returns the index of the first non-zero word of (wa ... wa + n), or, if there is none, returns
+// 'n'.
+static inline DECI_UNUSED
+size_t deci_skip0_n(deci_UWORD *wa, size_t n)
+{
+    size_t i = 0;
+    while (i != n && wa[i] == 0)
+        ++i;
+    return i;
+}
+
+// Returns pointer to the first non-zero word of (wa ... wa_end), or, if there is none, returns
+// 'wa_end'.
+static inline DECI_UNUSED
+deci_UWORD *deci_skip0(deci_UWORD *wa, deci_UWORD *wa_end)
+{
+    while (wa != wa_end && *wa == 0)
+        ++wa;
+    return wa;
+}
+
 // The compiler doesn't know we are not going to copy around/zero out gigabytes of deci_UWORD's,
 // so for non-constant sizes it inserts calls to actual 'memset()'/'memcpy()'/'memmove()' functions,
 // which are in theory can be more "optimal" than inline loops for very big sizes, but in reality
 // the function call itself just trashes the hell out of the cache.
 //
-// So let's write the loops manually.
+// So we provide the "small, dumb and ready to be inlined" versions of the memory manipulation
+// functions specifically for 'deci_UWORD' spans.
 
 static inline DECI_UNUSED
-void deci_zero_out(deci_UWORD *w, size_t n)
+void deci_zero_out(deci_UWORD *wa, deci_UWORD *wa_end)
 {
-    while (n) {
-        --n;
-        w[n] = 0;
-    }
+    for (; wa != wa_end; ++wa)
+        *wa = 0;
+}
+
+static inline DECI_UNUSED
+void deci_zero_out_n(deci_UWORD *wa, size_t n)
+{
+    for (size_t i = 0; i < n; ++i)
+        wa[i] = 0;
 }
 
 static inline DECI_UNUSED
@@ -337,14 +427,41 @@ void deci_copy_forward(deci_UWORD *dst, const deci_UWORD *src, size_t n)
 static inline DECI_UNUSED
 void deci_memcpy(deci_UWORD *dst, const deci_UWORD *src, size_t n)
 {
-    deci_copy_backward(dst, src, n);
+    deci_copy_forward(dst, src, n);
 }
 
 static inline DECI_UNUSED
 void deci_memmove(deci_UWORD *dst, const deci_UWORD *src, size_t n)
 {
-    if (((uintptr_t) dst) < ((uintptr_t) src))
+    const uintptr_t dst_i = (uintptr_t) dst;
+    const uintptr_t src_i = (uintptr_t) src;
+    if (dst_i < src_i)
         deci_copy_forward(dst, src, n);
-    else
+    else if (dst_i > src_i)
         deci_copy_backward(dst, src, n);
 }
+
+#if ! defined(DECI_CUSTOM_QUAD)
+
+#   if DECI_DOUBLE_WORD_BITS == 64
+typedef unsigned __int128 deci_QUAD_UWORD;
+#   elif DECI_DOUBLE_WORD_BITS == 32
+typedef uint64_t deci_QUAD_UWORD;
+#   else
+#       error "Unexpected value of DECI_DOUBLE_WORD_BITS"
+#   endif
+
+static inline DECI_UNUSED
+deci_QUAD_UWORD deci_q_from_3w(deci_UWORD w1, deci_UWORD w2, deci_UWORD w3)
+{
+    const deci_DOUBLE_UWORD w12 = (w1 * (deci_DOUBLE_UWORD) DECI_BASE) + w2;
+    return (w12 * (deci_QUAD_UWORD) DECI_BASE) + w3;
+}
+
+static inline DECI_UNUSED
+deci_DOUBLE_UWORD deci_q_div_d_to_d(deci_QUAD_UWORD a, deci_DOUBLE_UWORD b)
+{
+    return a / b;
+}
+
+#endif
