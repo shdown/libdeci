@@ -453,7 +453,7 @@ void deci_memmove(deci_UWORD *dst, const deci_UWORD *src, size_t n)
 
 #if DECI_DOUBLE_WORD_BITS == 64
 
-#   if defined(__SIZEOF_INT128__) // GNU C (GCC, Clang) or ICC
+#   if defined(__SIZEOF_INT128__) || defined(__INTEL_COMPILER)
 #       define DECI_HAVE_NATIVE_QUAD_WORD 1
 typedef unsigned __int128 deci_QUAD_UWORD;
 #   elif defined(_MSC_VER) // MSVC
