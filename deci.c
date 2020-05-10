@@ -26,38 +26,63 @@
         (Y_) = swap_tmp__; \
     } while (0)
 
+#if !defined(DECI_HAVE_DUMB_COMPILER)
+#   define DECI_HAVE_DUMB_COMPILER 1
+#endif
+
+typedef deci_UWORD CARRY;
+typedef deci_UWORD BORROW;
+#define CARRY_TO_1BIT(X_)  (-(deci_UWORD) (X_))
+#define BORROW_TO_1BIT(X_) (-(deci_UWORD) (X_))
+
 // add with carry
-static inline bool adc(deci_UWORD *a, deci_UWORD b, bool carry)
+static inline DECI_FORCE_INLINE
+CARRY adc(deci_UWORD *a, deci_UWORD b, CARRY carry)
 {
-    const deci_UWORD x = *a + b + carry;
+    const deci_UWORD x = *a + b + CARRY_TO_1BIT(carry);
     const deci_SWORD d = x - DECI_BASE;
+#if DECI_HAVE_DUMB_COMPILER
+    // 'result' is minus one if (d >= 0), zero otherwise.
+    const deci_SWORD result = (~d) >> (deci_SWORD) (DECI_WORD_BITS - 1);
+    *a = x - (DECI_BASE & result);
+    return result;
+#else
     if (d >= 0) {
         *a = d;
-        return true;
+        return -1;
     } else {
         *a = x;
-        return false;
+        return 0;
     }
+#endif
 }
 
 // subtract with borrow
-static inline bool sbb(deci_UWORD *a, deci_UWORD b, bool borrow)
+static inline DECI_FORCE_INLINE
+BORROW sbb(deci_UWORD *a, deci_UWORD b, BORROW borrow)
 {
-    const deci_SWORD d = *a - b - borrow;
+    const deci_SWORD d = *a - b - BORROW_TO_1BIT(borrow);
+#if DECI_HAVE_DUMB_COMPILER
+    // 'result' is minus one if (d < 0), zero otherwise.
+    const deci_SWORD result = d >> (deci_SWORD) (DECI_WORD_BITS - 1);
+    *a = d + (DECI_BASE & result);
+    return result;
+#else
     if (d < 0) {
         *a = d + DECI_BASE;
-        return true;
+        return -1;
     } else {
         *a = d;
-        return false;
+        return 0;
     }
+#endif
 }
 
 bool deci_add(
         deci_UWORD *wa, deci_UWORD *wa_end,
         deci_UWORD *wb, deci_UWORD *wb_end)
 {
-    bool carry = false;
+    CARRY carry = 0;
     for (; wb != wb_end; ++wb, ++wa)
         carry = adc(wa, *wb, carry);
 
@@ -78,7 +103,7 @@ bool deci_sub_raw(
         deci_UWORD *wa, deci_UWORD *wa_end,
         deci_UWORD *wb, deci_UWORD *wb_end)
 {
-    bool borrow = false;
+    BORROW borrow = 0;
     for (; wb != wb_end; ++wb, ++wa)
         borrow = sbb(wa, *wb, borrow);
 
@@ -112,11 +137,13 @@ void deci_uncomplement(deci_UWORD *wa, deci_UWORD *wa_end)
 static void long_mul_round(deci_UWORD *wa, deci_UWORD *wa_end, deci_UWORD b, deci_UWORD *out)
 {
     deci_UWORD mul_carry = 0;
-    bool add_carry = false;
+    CARRY add_carry = 0;
 
     do {
         const deci_DOUBLE_UWORD x = *wa * ((deci_DOUBLE_UWORD) b) + mul_carry;
+
         const deci_UWORD w = x % DECI_BASE;
+
         mul_carry = x / DECI_BASE;
 
         add_carry = adc(out, w, add_carry);
@@ -169,7 +196,7 @@ static deci_UWORD subtract_scaled_raw(
         deci_UWORD *wz, deci_UWORD *wz_end)
 {
     deci_UWORD mul_carry = 0;
-    bool sub_borrow = false;
+    BORROW sub_borrow = 0;
 
     for (; wz != wz_end; ++wz, ++wx) {
         const deci_DOUBLE_UWORD x = (*wz * (deci_DOUBLE_UWORD) y) + mul_carry;
@@ -179,21 +206,32 @@ static deci_UWORD subtract_scaled_raw(
     }
 
     if (wx == wx_end) {
-        return mul_carry + sub_borrow;
+        return mul_carry + BORROW_TO_1BIT(sub_borrow);
     } else {
-        return sbb(wx, mul_carry, sub_borrow);
+        sub_borrow = sbb(wx, mul_carry, sub_borrow);
+        return BORROW_TO_1BIT(sub_borrow);
     }
+}
+
+static inline DECI_FORCE_INLINE
+deci_DOUBLE_UWORD combine(deci_UWORD w1, deci_UWORD w2)
+{
+    return w1 * ((deci_DOUBLE_UWORD) DECI_BASE) + w2;
 }
 
 static deci_UWORD estimate_q(
         deci_UWORD r1, deci_UWORD r2, deci_UWORD r3,
         deci_UWORD b1, deci_UWORD b2)
 {
-    const deci_QUAD_UWORD r123 = deci_q_from_3w(r1, r2, r3);
+    deci_DOUBLE_UWORD q;
 
-    const deci_DOUBLE_UWORD b12 = (b1 * (deci_DOUBLE_UWORD) DECI_BASE) + b2;
-
-    const deci_DOUBLE_UWORD q = deci_q_div_d_to_d(r123, b12);
+    const deci_DOUBLE_UWORD b12 = combine(b1, b2);
+    if (r1 == 0) {
+        q = combine(r2, r3) / b12;
+    } else {
+        const deci_QUAD_UWORD r123 = deci_q_from_3w(r1, r2, r3);
+        q = deci_q_div_d_to_d(r123, b12);
+    }
 
     return q < (DECI_BASE - 1) ? q : (DECI_BASE - 1);
 }
@@ -226,15 +264,10 @@ static deci_UWORD long_div_round(
     const size_t nwb = wb_end - wb;
 
     deci_UWORD *aligned_wr_end = wr_end;
-    deci_UWORD r_hi = 0;
+    deci_UWORD r1 = 0;
     if (nwr != nwb)
-        r_hi = *--aligned_wr_end;
-    deci_UWORD q = estimate_q(
-        r_hi,
-        aligned_wr_end[-1],
-        aligned_wr_end[-2],
-        wb_end[-1],
-        wb_end[-2]);
+        r1 = *--aligned_wr_end;
+    deci_UWORD q = estimate_q(r1, aligned_wr_end[-1], aligned_wr_end[-2], wb_end[-1], wb_end[-2]);
 
     if (subtract_scaled_raw(wr, wr_end, q, wb, wb_end)) {
         --q;

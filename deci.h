@@ -76,6 +76,16 @@
 #   endif
 #endif
 
+#if ! defined(DECI_FORCE_INLINE)
+#   if __GNUC__ >= 2
+#       define DECI_FORCE_INLINE __attribute__((always_inline))
+#   elif defined(_MSC_VER)
+#       define DECI_FORCE_INLINE __forceinline
+#   else
+#       define DECI_FORCE_INLINE /*nothing*/
+#   endif
+#endif
+
 // We *really* want to be able to natively divide 'deci_DOUBLE_UWORD' values, so it has to be
 // 64-bit on 64-bit systems, and 32-bit on 32-bit systems.
 
@@ -303,7 +313,7 @@ size_t deci_mod(
         deci_UWORD *wb, deci_UWORD *wb_end);
 
 // Checks if (wa ... wa_end) represents the value of zero, i.e., that all its words are zero.
-static inline DECI_UNUSED
+static inline DECI_UNUSED DECI_FORCE_INLINE
 bool deci_is_zero(deci_UWORD *wa, deci_UWORD *wa_end)
 {
     for (; wa != wa_end; ++wa)
@@ -313,7 +323,7 @@ bool deci_is_zero(deci_UWORD *wa, deci_UWORD *wa_end)
 }
 
 // Checks if (wa ... wa + n) represents the value of zero, i.e., that all its words are zero.
-static inline DECI_UNUSED
+static inline DECI_UNUSED DECI_FORCE_INLINE
 bool deci_is_zero_n(deci_UWORD *wa, size_t n)
 {
     for (size_t i = 0; i < n; ++i)
@@ -326,7 +336,7 @@ bool deci_is_zero_n(deci_UWORD *wa, size_t n)
 //   * 'if_less' if the former is less than the latter;
 //   * 'if_eq' if the former is equal to the latter;
 //   * 'if_greater' if the former is greater than the latter.
-static inline DECI_UNUSED
+static inline DECI_UNUSED DECI_FORCE_INLINE
 int deci_compare_n(
         deci_UWORD *wa, deci_UWORD *wb, size_t n,
         int if_less, int if_eq, int if_greater)
@@ -342,7 +352,7 @@ int deci_compare_n(
 }
 
 // Returns pointer to the last non-zero word of (wa ... wa_end), or, if there is none, returns 'wa'.
-static inline DECI_UNUSED
+static inline DECI_UNUSED DECI_FORCE_INLINE
 deci_UWORD *deci_normalize(deci_UWORD *wa, deci_UWORD *wa_end)
 {
     while (wa_end != wa) {
@@ -354,7 +364,7 @@ deci_UWORD *deci_normalize(deci_UWORD *wa, deci_UWORD *wa_end)
 }
 
 // Returns the index of the last non-zero word of (wa ... wa + n), or, if there is none, returns 0.
-static inline DECI_UNUSED
+static inline DECI_UNUSED DECI_FORCE_INLINE
 size_t deci_normalize_n(deci_UWORD *wa, size_t n)
 {
     while (n) {
@@ -367,7 +377,7 @@ size_t deci_normalize_n(deci_UWORD *wa, size_t n)
 
 // Returns the index of the first non-zero word of (wa ... wa + n), or, if there is none, returns
 // 'n'.
-static inline DECI_UNUSED
+static inline DECI_UNUSED DECI_FORCE_INLINE
 size_t deci_skip0_n(deci_UWORD *wa, size_t n)
 {
     size_t i = 0;
@@ -378,7 +388,7 @@ size_t deci_skip0_n(deci_UWORD *wa, size_t n)
 
 // Returns pointer to the first non-zero word of (wa ... wa_end), or, if there is none, returns
 // 'wa_end'.
-static inline DECI_UNUSED
+static inline DECI_UNUSED DECI_FORCE_INLINE
 deci_UWORD *deci_skip0(deci_UWORD *wa, deci_UWORD *wa_end)
 {
     while (wa != wa_end && *wa == 0)
@@ -394,21 +404,21 @@ deci_UWORD *deci_skip0(deci_UWORD *wa, deci_UWORD *wa_end)
 // So we provide the "small, dumb and ready to be inlined" versions of the memory manipulation
 // functions specifically for 'deci_UWORD' spans.
 
-static inline DECI_UNUSED
+static inline DECI_UNUSED DECI_FORCE_INLINE
 void deci_zero_out(deci_UWORD *wa, deci_UWORD *wa_end)
 {
     for (; wa != wa_end; ++wa)
         *wa = 0;
 }
 
-static inline DECI_UNUSED
+static inline DECI_UNUSED DECI_FORCE_INLINE
 void deci_zero_out_n(deci_UWORD *wa, size_t n)
 {
     for (size_t i = 0; i < n; ++i)
         wa[i] = 0;
 }
 
-static inline DECI_UNUSED
+static inline DECI_UNUSED DECI_FORCE_INLINE
 void deci_copy_backward(deci_UWORD *dst, const deci_UWORD *src, size_t n)
 {
     while (n) {
@@ -417,20 +427,20 @@ void deci_copy_backward(deci_UWORD *dst, const deci_UWORD *src, size_t n)
     }
 }
 
-static inline DECI_UNUSED
+static inline DECI_UNUSED DECI_FORCE_INLINE
 void deci_copy_forward(deci_UWORD *dst, const deci_UWORD *src, size_t n)
 {
     for (size_t i = 0; i < n; ++i)
         dst[i] = src[i];
 }
 
-static inline DECI_UNUSED
+static inline DECI_UNUSED DECI_FORCE_INLINE
 void deci_memcpy(deci_UWORD *dst, const deci_UWORD *src, size_t n)
 {
     deci_copy_forward(dst, src, n);
 }
 
-static inline DECI_UNUSED
+static inline DECI_UNUSED DECI_FORCE_INLINE
 void deci_memmove(deci_UWORD *dst, const deci_UWORD *src, size_t n)
 {
     const uintptr_t dst_i = (uintptr_t) dst;
@@ -441,27 +451,116 @@ void deci_memmove(deci_UWORD *dst, const deci_UWORD *src, size_t n)
         deci_copy_backward(dst, src, n);
 }
 
-#if ! defined(DECI_CUSTOM_QUAD)
+#if DECI_DOUBLE_WORD_BITS == 64
 
-#   if DECI_DOUBLE_WORD_BITS == 64
+#   if defined(__SIZEOF_INT128__) // GNU C (GCC, Clang) or ICC
+#       define DECI_HAVE_NATIVE_QUAD_WORD 1
 typedef unsigned __int128 deci_QUAD_UWORD;
-#   elif DECI_DOUBLE_WORD_BITS == 32
-typedef uint64_t deci_QUAD_UWORD;
-#   else
-#       error "Unexpected value of DECI_DOUBLE_WORD_BITS"
-#   endif
+#   elif defined(_MSC_VER) // MSVC
+#       define DECI_HAVE_NATIVE_QUAD_WORD 0
+#       include <intrin.h>
+
+typedef struct {
+    uint64_t lo;
+    uint64_t hi;
+} deci_QUAD_UWORD;
+
+#       if defined(_M_X64) || defined(_M_IA64)
+
+#           pragma intrinsic(_umul128)
+#           pragma intrinsic(_addcarry_u64)
+#           define deci__mul128(A_, B_, Ptr_Hi_)  _umul128(A_, B_, Ptr_Hi_)
+#           define deci__addc64(A_, B_, Ptr_Lo_)  _addcarry_u64(0, A_, B_, Ptr_Lo_)
+#           if _MSC_VER >= 1920
+#               pragma intrinsic(_udiv128)
+#               define deci__div128(N_Hi_, N_Lo_, D_, Ptr_R_)  _udiv128(N_Hi_, N_Lo_, D_, Ptr_R_)
+#               define DECI_HAVE__DIV128 1
+#           else
+#               define DECI_HAVE__DIV128 0
+#           endif
+
+#       elif defined(_M_ARM64)
+
+#           pragma intrinsic(__umulh)
+#           define DECI_HAVE__DIV128 0
+
+static inline DECI_UNUSED DECI_FORCE_INLINE
+uint64_t deci__mul128(uint64_t a, uint64_t b, uint64_t *hi)
+{
+    *hi = __umulh(a, b);
+    return a * b;
+}
+
+static inline DECI_UNUSED DECI_FORCE_INLINE
+unsigned char deci__addc64(uint64_t a, uint64_t b, uint64_t *lo)
+{
+    uint64_t r = a + b;
+    *lo = r;
+    return r < a;
+}
+
+#       else
+#           error "Our list of MSVC-supported 64-bit platforms is not exhaustive; please report."
+#       endif
 
 static inline DECI_UNUSED
+deci_QUAD_UWORD deci_q_from_3w(deci_UWORD w1, deci_UWORD w2, deci_UWORD w3)
+{
+    const deci_DOUBLE_UWORD w12 = (w1 * (deci_DOUBLE_UWORD) DECI_BASE) + w2;
+
+    deci_QUAD_UWORD q;
+    q.lo = deci__mul128(w12, DECI_BASE, &q.hi);
+
+    const unsigned char carry = deci__addc64(q.lo, w3, &q.lo);
+    q.hi += carry;
+
+    return q;
+}
+
+static inline DECI_UNUSED
+deci_DOUBLE_UWORD deci_q_div_d_to_d(deci_QUAD_UWORD a, deci_DOUBLE_UWORD b)
+{
+#if DECI_HAVE__DIV128
+    uint64_t rem;
+    return deci__div128(a.hi, a.lo, b, &rem);
+#else
+    deci_UWORD q = 0;
+    for (unsigned i = 1 << 29; i != 0; i >>= 1) {
+        const deci_UWORD x = q | i;
+
+        uint64_t hi;
+        uint64_t lo = deci__mul128(x, b, &hi);
+
+        if (hi < a.hi || (hi == a.hi && lo <= a.lo))
+            q = x;
+    }
+    return q;
+#endif
+}
+
+#   else
+#       error "Unsupported compiler."
+#   endif
+
+#elif DECI_DOUBLE_WORD_BITS == 32
+#           define DECI_HAVE_NATIVE_QUAD_WORD 1
+typedef uint64_t deci_QUAD_UWORD;
+
+#else
+#   error "BUG: unexpected value of DECI_DOUBLE_WORD_BITS."
+#endif
+
+#if DECI_HAVE_NATIVE_QUAD_WORD
+static inline DECI_UNUSED DECI_FORCE_INLINE
 deci_QUAD_UWORD deci_q_from_3w(deci_UWORD w1, deci_UWORD w2, deci_UWORD w3)
 {
     const deci_DOUBLE_UWORD w12 = (w1 * (deci_DOUBLE_UWORD) DECI_BASE) + w2;
     return (w12 * (deci_QUAD_UWORD) DECI_BASE) + w3;
 }
 
-static inline DECI_UNUSED
+static inline DECI_UNUSED DECI_FORCE_INLINE
 deci_DOUBLE_UWORD deci_q_div_d_to_d(deci_QUAD_UWORD a, deci_DOUBLE_UWORD b)
 {
     return a / b;
 }
-
 #endif
