@@ -76,6 +76,10 @@
 #   endif
 #endif
 
+#if ! defined(DECI_UINTPTR_T)
+#   define DECI_UINTPTR_T uintptr_t
+#endif
+
 #if ! defined(DECI_FORCE_INLINE)
 #   if __GNUC__ >= 2
 #       define DECI_FORCE_INLINE __attribute__((always_inline))
@@ -312,6 +316,33 @@ size_t deci_mod(
         deci_UWORD *wa, deci_UWORD *wa_end,
         deci_UWORD *wb, deci_UWORD *wb_end);
 
+// Divides (wa ... wa_end) by (2 raised to 'DECI_WORD_BITS'), writing the quotient into
+// (wa ... wa_end), and returning the remainder.
+deci_UWORD deci_tobits_round(deci_UWORD *wa, deci_UWORD *wa_end);
+
+// Converts a normal 'deci_UWORD *' span to a "long" span of 'deci_DOUBLE_UWORD *'.
+//
+// 'out' must have capacity of
+//     CEIL_HALF(wa_end - wa)
+// double words, where
+//     CEIL_HALF(n) = (n / 2) + (n % 2).
+void deci_tolong(deci_UWORD *wa, deci_UWORD *wa_end, deci_DOUBLE_UWORD *out);
+
+// Divides (wd ... wd_end) by (2 raised to 'DECI_DOUBLE_WORD_BITS'), writing the quotient into
+// (wd ... wd_end), and returning the remainder.
+deci_DOUBLE_UWORD deci_long_tobits_round(deci_DOUBLE_UWORD *wd, deci_DOUBLE_UWORD *wd_end);
+
+// Multiplies (wa ... wa_end) by (2 raised to 'DECI_WORD_BITS').
+//
+// Returns the two most significant words of the result combined (see below), writing the rest of
+// the words into (wa ... wa_end).
+//
+// What "combined" means here is that, if the most significant words is 'hi' and the second most
+// significant word is 'lo', then
+//     hi * DECI_BASE + lo
+// is returned. Note that the result always fits into a 'deci_UWORD'.
+deci_UWORD deci_frombits_round(deci_UWORD *wa, deci_UWORD *wa_end);
+
 // Checks if (wa ... wa_end) represents the value of zero, i.e., that all its words are zero.
 static inline DECI_UNUSED DECI_FORCE_INLINE
 bool deci_is_zero(deci_UWORD *wa, deci_UWORD *wa_end)
@@ -355,11 +386,8 @@ int deci_compare_n(
 static inline DECI_UNUSED DECI_FORCE_INLINE
 deci_UWORD *deci_normalize(deci_UWORD *wa, deci_UWORD *wa_end)
 {
-    while (wa_end != wa) {
+    while (wa_end != wa && wa_end[-1] == 0)
         --wa_end;
-        if (*wa_end)
-            return ++wa_end;
-    }
     return wa_end;
 }
 
@@ -367,11 +395,8 @@ deci_UWORD *deci_normalize(deci_UWORD *wa, deci_UWORD *wa_end)
 static inline DECI_UNUSED DECI_FORCE_INLINE
 size_t deci_normalize_n(deci_UWORD *wa, size_t n)
 {
-    while (n) {
+    while (n && wa[n - 1] == 0)
         --n;
-        if (wa[n])
-            return ++n;
-    }
     return n;
 }
 
@@ -443,8 +468,8 @@ void deci_memcpy(deci_UWORD *dst, const deci_UWORD *src, size_t n)
 static inline DECI_UNUSED DECI_FORCE_INLINE
 void deci_memmove(deci_UWORD *dst, const deci_UWORD *src, size_t n)
 {
-    const uintptr_t dst_i = (uintptr_t) dst;
-    const uintptr_t src_i = (uintptr_t) src;
+    const DECI_UINTPTR_T dst_i = (DECI_UINTPTR_T) dst;
+    const DECI_UINTPTR_T src_i = (DECI_UINTPTR_T) src;
     if (dst_i < src_i)
         deci_copy_forward(dst, src, n);
     else if (dst_i > src_i)
