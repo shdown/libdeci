@@ -24,9 +24,12 @@
 #if DECI_DOUBLE_WORD_BITS == 64
 
 #   if defined(__SIZEOF_INT128__) || defined(__INTEL_COMPILER)
+// Either GCC, Clang or ICC; all support '__int128' on 64-bit platforms.
 #       define DECI_HAVE_NATIVE_QUAD_WORD 1
 typedef unsigned __int128 deci_QUAD_UWORD;
+
 #   elif defined(_MSC_VER)
+// MSVC; various intrinsics may be available depending on arch.
 #       define DECI_HAVE_NATIVE_QUAD_WORD 0
 #       include <intrin.h>
 
@@ -39,11 +42,11 @@ typedef struct {
 
 #           pragma intrinsic(_umul128)
 #           pragma intrinsic(_addcarry_u64)
-#           define deci__mul128(A_, B_, Ptr_Hi_)  _umul128(A_, B_, Ptr_Hi_)
-#           define deci__addc64(A_, B_, Ptr_Lo_)  _addcarry_u64(0, A_, B_, Ptr_Lo_)
+#           define deci__mul128(A, B, Ptr_Hi)  _umul128(A, B, Ptr_Hi)
+#           define deci__addc64(A, B, Ptr_Lo)  _addcarry_u64(0, A, B, Ptr_Lo)
 #           if _MSC_VER >= 1920
 #               pragma intrinsic(_udiv128)
-#               define deci__div128(N_Hi_, N_Lo_, D_, Ptr_R_)  _udiv128(N_Hi_, N_Lo_, D_, Ptr_R_)
+#               define deci__div128(A_Hi, A_Lo, B, Ptr_R)  _udiv128(A_Hi, A_Lo, B, Ptr_R)
 #               define DECI_HAVE__DIV128 1
 #           else
 #               define DECI_HAVE__DIV128 0
@@ -55,45 +58,27 @@ typedef struct {
 #           define DECI_HAVE__DIV128 0
 
 static inline DECI_UNUSED DECI_FORCE_INLINE
-uint64_t deci__mul128(uint64_t a, uint64_t b, uint64_t *hi)
-{
-    *hi = __umulh(a, b);
-    return a * b;
-}
+uint64_t deci__mul128(uint64_t a, uint64_t b, uint64_t *hi) { *hi = __umulh(a, b); return a * b; }
 
 static inline DECI_UNUSED DECI_FORCE_INLINE
-unsigned char deci__addc64(uint64_t a, uint64_t b, uint64_t *lo)
-{
-    uint64_t r = a + b;
-    *lo = r;
-    return r < a;
-}
+unsigned char deci__addc64(uint64_t a, uint64_t b, uint64_t *lo) { return (*lo = a + b) < a; }
 
 #       else
 #           error "Our list of MSVC-supported 64-bit platforms is not exhaustive; please report."
 #       endif
 
-static inline DECI_UNUSED
-deci_QUAD_UWORD deci_q_from_3w(deci_UWORD w1, deci_UWORD w2, deci_UWORD w3)
-{
-    const deci_DOUBLE_UWORD w12 = (w1 * (deci_DOUBLE_UWORD) DECI_BASE) + w2;
+// Implementation of 'deci_q_*' functions for 64-bit MSVC.
 
-    deci_QUAD_UWORD q;
-    q.lo = deci__mul128(w12, DECI_BASE, &q.hi);
-
-    const unsigned char carry = deci__addc64(q.lo, w3, &q.lo);
-    q.hi += carry;
-
-    return q;
-}
-
-static inline DECI_UNUSED
+static inline DECI_UNUSED DECI_FORCE_INLINE
 deci_QUAD_UWORD deci_q_from_2w_2w(deci_DOUBLE_UWORD hi, deci_DOUBLE_UWORD lo)
 {
     deci_QUAD_UWORD q;
-    q.lo = deci__mul128(hi, ((deci_DOUBLE_UWORD) DECI_BASE) * DECI_BASE, &q.hi);
+    q.lo = deci__mul128(
+        hi,
+        ((deci_DOUBLE_UWORD) DECI_BASE) * DECI_BASE,
+        &q.hi);
 
-    const unsigned char carry = deci__addc64(q.lo, lo, &q.lo);
+    unsigned char carry = deci__addc64(q.lo, lo, &q.lo);
     q.hi += carry;
 
     return q;
@@ -133,25 +118,23 @@ deci_DOUBLE_UWORD deci_q_bin_lo_2w(deci_QUAD_UWORD q)
 }
 
 #   else
+// Neither of: GCC, Clang, ICC, MSVC.
 #       error "Unsupported compiler."
 #   endif
 
 #elif DECI_DOUBLE_WORD_BITS == 32
-#           define DECI_HAVE_NATIVE_QUAD_WORD 1
+
+#   define DECI_HAVE_NATIVE_QUAD_WORD 1
 typedef uint64_t deci_QUAD_UWORD;
 
 #else
 #   error "BUG: unexpected value of DECI_DOUBLE_WORD_BITS."
 #endif
 
-
 #if DECI_HAVE_NATIVE_QUAD_WORD
-static inline DECI_UNUSED DECI_FORCE_INLINE
-deci_QUAD_UWORD deci_q_from_3w(deci_UWORD w1, deci_UWORD w2, deci_UWORD w3)
-{
-    const deci_DOUBLE_UWORD w12 = (w1 * (deci_DOUBLE_UWORD) DECI_BASE) + w2;
-    return (w12 * (deci_QUAD_UWORD) DECI_BASE) + w3;
-}
+
+// Implementation of 'deci_q_*' functions for the case when 'deci_QUAD_UWORD' is "native", primitive
+// integral type.
 
 static inline DECI_UNUSED DECI_FORCE_INLINE
 deci_QUAD_UWORD deci_q_from_2w_2w(deci_DOUBLE_UWORD hi, deci_DOUBLE_UWORD lo)

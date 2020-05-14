@@ -230,6 +230,29 @@ deci_UWORD deci_mul_uword(
     return carry;
 }
 
+// Adds ((wz ... wz_end) times 'y') to (wx ... implied_wx_end), modifying the latter.
+//
+// Assumes (y < DECI_BASE); otherwise, the behavior is undefined.
+//
+// Assumes, even if 'y' is zero, that
+//     N >= (wz_end - wz),
+// where N = (implied_wx_end - wx), or, in other words, the number of words behind the 'wx' pointer.
+// Otherwise, the behavior is undefined.
+void deci_add_scaled(
+    deci_UWORD *wx,
+    deci_UWORD y,
+    deci_UWORD *wz, deci_UWORD *wz_end);
+
+// Subtracts ((wz ... wz_end) times 'y') from (wx ... implied_wx_end), modifying the latter.
+//
+// Assumes (y < DECI_BASE); otherwise, the behavior is undefined.
+//
+// Assumes (wx_end - wx) >= (wz_end - wz); otherwise, the behavior is undefined.
+deci_UWORD deci_sub_scaled_raw(
+        deci_UWORD *wx, deci_UWORD *wx_end,
+        deci_UWORD y,
+        deci_UWORD *wz, deci_UWORD *wz_end);
+
 // Multiplies (wa ... wa_end) by (wb ... wb_end), writing the result into
 //     (out ... out + N),
 // where N = (wa_end - wa) + (wb_end - wb).
