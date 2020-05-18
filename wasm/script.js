@@ -16,18 +16,19 @@ const deci_strerror = (errno) => {
     }
 };
 
-const deci_from_str = (s, memory_view, i, out_max) => {
+const deci_from_str = (s, memory_view, out_begin, out_end) => {
     const m = s.match(/^0*([0-9]*)$/);
     if (m === null)
         return DECI_EFORMAT;
     s = m[1];
 
     const ns = s.length;
-    const nout = _div_ceil(ns, DECI_BASE_LOG);
-    if (nout > out_max)
+    const nresult = _div_ceil(ns, DECI_BASE_LOG);
+    if (nresult > (out_end - out_begin))
         return DECI_ETOOBIG;
 
     let si = ns;
+    let i = out_begin;
     for (;;) {
         const si_1 = si - DECI_BASE_LOG;
         if (si_1 < 0)
@@ -41,185 +42,183 @@ const deci_from_str = (s, memory_view, i, out_max) => {
     return i;
 };
 
-const deci_to_str = (memory_view, i_begin, i_end) => {
-    if (i_begin === i_end)
+const deci_to_str = (memory_view, begin, end) => {
+    if (begin === end)
         return '0';
 
-    --i_end;
-    let s = memory_view[i_end].toString();
+    --end;
+    let s = memory_view[end].toString();
 
-    while (i_end !== i_begin) {
-        --i_end;
-        s += (memory_view[i_end] + DECI_BASE).toString().slice(1);
+    while (end !== begin) {
+        --end;
+        s += (memory_view[end] + DECI_BASE).toString().slice(1);
     }
 
     return s;
 };
 
-const deci_normalize = (memory_view, i_begin, i_end) => {
-    while (i_end !== i_begin && memory_view[i_end - 1] === 0)
-        --i_end;
-    return i_end;
+const deci_normalize = (memory_view, begin, end) => {
+    while (end !== begin && memory_view[end - 1] === 0)
+        --end;
+    return end;
 };
 
-const deci_zero_out = (memory_view, i_begin, i_end) => {
-    for (let i = i_begin; i !== i_end; ++i)
+const deci_zero_out = (memory_view, begin, end) => {
+    for (let i = begin; i !== end; ++i)
         memory_view[i] = 0;
 };
 
 //---------------------------------------------------------------------------------------
 
 class Span {
-    constructor(i_begin, i_end) {
-        this.i_begin = i_begin;
-        this.i_end = i_end;
+    constructor(begin, end) {
+        this.begin = begin;
+        this.end = end;
     }
 
-    size() {
-        return this.i_end - this.i_begin;
+    get size() {
+        return this.end - this.begin;
     }
 
-    bytei_begin() {
-        return this.i_begin * DECI_WORD_BYTES;
+    set size(n) {
+        this.end = this.begin + n;
     }
 
-    bytei_end() {
-        return this.i_end * DECI_WORD_BYTES;
+    get beginPointer() {
+        return this.begin * DECI_WORD_BYTES;
     }
 
-    empty() {
-        return this.i_end === this.i_begin;
+    get endPointer() {
+        return this.end * DECI_WORD_BYTES;
     }
 
-    resize(n) {
-        this.i_end = this.i_begin + n;
+    get empty() {
+        return this.end === this.begin;
     }
 }
 
-const parse_forward_span = (s, memory_view, state) => {
-    const i = state.i;
-    const j = deci_from_str(s, memory_view, i, state.maxi - i);
-    if (j < 0)
-        throw new Error(deci_strerror(j));
-    state.i = j;
-    return new Span(i, j);
+const spanParseForward = (s, memoryView, parseState) => {
+    const begin = parseState.cur;
+    const end = deci_from_str(s, memoryView, begin, parseState.max);
+    if (end < 0)
+        throw new Error(deci_strerror(end));
+    parseState.cur = end;
+    return new Span(begin, end);
 };
 
-const stringify_span = (memory_view, a) => {
-    return deci_to_str(memory_view, a.i_begin, a.i_end);
+const spanStringify = (memoryView, a) => {
+    return deci_to_str(memoryView, a.begin, a.end);
 };
 
-const zero_out_span = (memory_view, a) => {
-    deci_zero_out(memory_view, a.i_begin, a.i_end);
+const spanZeroOut = (memoryView, a) => {
+    deci_zero_out(memoryView, a.begin, a.end);
 };
 
-const normalize_span = (memory_view, a) => {
-    a.i_end = deci_normalize(memory_view, a.i_begin, a.i_end);
+const spanNormalize = (memoryView, a) => {
+    a.end = deci_normalize(memoryView, a.begin, a.end);
 };
 
-const ACTION_add = (instance, memory_view, a, b) => {
-    if (a.size() < b.size()) {
+const ACTION_add = (instance, memoryView, a, b) => {
+    if (a.size < b.size) {
         [a, b] = [b, a];
     }
 
     const carry = instance.exports.deci_add(
-        a.bytei_begin(), a.bytei_end(),
-        b.bytei_begin(), b.bytei_end());
+        a.beginPointer, a.endPointer,
+        b.beginPointer, b.endPointer);
 
     if (carry)
-        memory_view[a.i_end++] = 1;
+        memoryView[a.end++] = 1;
 
     return {span: a};
 };
 
-const ACTION_sub = (instance, memory_view, a, b) => {
+const ACTION_sub = (instance, memoryView, a, b) => {
     let neg = false;
-    if (a.size() < b.size()) {
+    if (a.size < b.size) {
         [a, b] = [b, a];
         neg = true;
     }
 
     const underflow = instance.exports.WRAPPED_deci_sub(
-        a.bytei_begin(), a.bytei_end(),
-        b.bytei_begin(), b.bytei_end());
+        a.beginPointer, a.endPointer,
+        b.beginPointer, b.endPointer);
 
     if (underflow)
         neg = !neg;
 
-    normalize_span(memory_view, a);
+    spanNormalize(memoryView, a);
 
     return {
-        negative: neg && !a.empty(),
+        negative: neg && !a.empty,
         span: a,
     };
 };
 
-const ACTION_mul = (instance, memory_view, a, b, outi) => {
-    const r = new Span(outi, outi + a.size() + b.size());
+const ACTION_mul = (instance, memoryView, a, b, outBegin) => {
+    const r = new Span(outBegin, outBegin + a.size + b.size);
 
-    zero_out_span(memory_view, r);
+    spanZeroOut(memoryView, r);
 
     instance.exports.deci_mul(
-        a.bytei_begin(), a.bytei_end(),
-        b.bytei_begin(), b.bytei_end(),
-        r.bytei_begin());
+        a.beginPointer, a.endPointer,
+        b.beginPointer, b.endPointer,
+        r.beginPointer);
 
-    normalize_span(memory_view, r);
+    spanNormalize(memoryView, r);
 
     return {span: r};
 };
 
-const ACTION_div = (instance, memory_view, a, b, outi) => {
-    if (b.empty())
+const ACTION_div = (instance, memoryView, a, b) => {
+    if (b.empty)
         throw new Error('division by zero');
 
-    const nr = instance.exports.deci_div(
-        a.bytei_begin(), a.bytei_end(),
-        b.bytei_begin(), b.bytei_end());
+    a.size = instance.exports.deci_div(
+        a.beginPointer, a.endPointer,
+        b.beginPointer, b.endPointer);
 
-    a.resize(nr);
-    normalize_span(memory_view, a);
+    spanNormalize(memoryView, a);
 
     return {span: a};
 };
 
-const ACTION_mod = (instance, memory_view, a, b, outi) => {
-    if (b.empty())
+const ACTION_mod = (instance, memoryView, a, b) => {
+    if (b.empty)
         throw new Error('division by zero');
 
-    const nr = instance.exports.deci_mod(
-        a.bytei_begin(), a.bytei_end(),
-        b.bytei_begin(), b.bytei_end());
+    a.size = instance.exports.deci_mod(
+        a.beginPointer, a.endPointer,
+        b.beginPointer, b.endPointer);
 
-    a.resize(nr);
-    normalize_span(memory_view, a);
+    spanNormalize(memoryView, a);
 
     return {span: a};
 };
 
 //---------------------------------------------------------------------------------------
 
-const report_error = (text) => {
-    const root_div = document.getElementById('root');
-    const p = _from_html('<p class="error"></p>');
-    p.append(text);
-    root_div.prepend(p);
-};
-
-const install_global_error_handler = () => {
-    window.onerror = (error_msg, url, line_num, column_num, error_obj) => {
-        report_error(`Error: ${error_msg} @ ${url}:${line_num}:${column_num}`);
-        console.log('Error object:');
-        console.log(error_obj);
-        return false;
-    };
-};
-
-const _from_html = (html) => {
+const fromHtml = (html) => {
     const tmpl = document.createElement('template');
     tmpl.innerHTML = html;
-    return tmpl.content.firstChild;
+    return tmpl.content.firstElementChild;
 };
+
+const htmlEscape = (s) => {
+    const entityMap = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+        '/': '&#x2F;',
+        '`': '&#x60;',
+        '=': '&#x3D;',
+    };
+    return String(s).replace(/[&<>"'`=/]/g, c => entityMap[c]);
+};
+
+//---------------------------------------------------------------------------------------
 
 class DownloadError extends Error {
     constructor(xhr) {
@@ -228,10 +227,10 @@ class DownloadError extends Error {
     }
 }
 
-const downloadTheDumbWay = (src) => {
+const downloadBlob = (url) => {
     return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
-        xhr.open('GET', src, true);
+        xhr.open('GET', url, true);
         xhr.responseType = 'arraybuffer';
         xhr.onload = () => {
             if (xhr.status >= 200 && xhr.status < 300) {
@@ -247,44 +246,45 @@ const downloadTheDumbWay = (src) => {
     });
 };
 
-const streamTheSmartWay = (src) => {
-    return fetch(src);
-};
-
-const wasmInstantiateTheDumbWayFrom = async (src) => {
-    const blob = await downloadTheDumbWay(src);
+const wasmInstantiateBlob = async (url) => {
+    const blob = await downloadBlob(url);
     const module = await WebAssembly.compile(blob);
     return await WebAssembly.instantiate(module);
 };
 
-const wasmInstantiateFrom = async (src) => {
+const wasmInstantiate = async (url) => {
     const proto = window.location.protocol;
     if (proto !== 'http:' && proto !== 'https:') {
-        return await wasmInstantiateTheDumbWayFrom(src);
+        // Seems like local document ('file://' protocol), fetch() just would not work.
+        return await wasmInstantiateBlob(url);
     }
 
     if (WebAssembly.instantiateStreaming !== undefined) {
-        const stream = streamTheSmartWay(src);
-        return await WebAssembly.instantiateStreaming(stream);
+        return await WebAssembly.instantiateStreaming(fetch(url));
     }
-
-    if (WebAssembly.compileStreaming !== undefined) {
-        const stream = streamTheSmartWay(src);
-        const module = await WebAssembly.compileStreaming(stream);
-        return await WebAssembly.instantiate(module);
-    }
-
-    return await wasmInstantiateTheDumbWayFrom(src);
+    // Older browser.
+    return await wasmInstantiateBlob(url);
 };
 
-const async_main = async () => {
-    const wasm = await wasmInstantiateFrom("./deci.wasm");
-    const instance = (wasm.instance !== undefined) ? wasm.instance : wasm;
+// Compatibility shim for older browsers.
+const wasmInstantiateCompat = async (url) => {
+    const result = await wasmInstantiate(url);
+    if (result.instance !== undefined)
+        return result.instance;
+    // Older browser.
+    return result;
+};
+
+//---------------------------------------------------------------------------------------
+
+const asyncMain = async () => {
+    const instance = await wasmInstantiateCompat('./deci.wasm');
 
     const memory = instance.exports.memory;
-    const memory_view = new DECI_UINTXX_ARRAY_CLASS(memory.buffer);
+    const memoryView = new DECI_UINTXX_ARRAY_CLASS(memory.buffer);
 
-    const form = _from_html(`<form>
+    const form = fromHtml(`
+        <form>
             <div>
                 <input
                     id="n1"
@@ -319,59 +319,75 @@ const async_main = async () => {
         </form>
     `);
 
-    const work = (s_n1, s_act, s_n2) => {
-        const parse_state = {i: 0, maxi: 65536};
-        const a_span = parse_forward_span(s_n1, memory_view, parse_state);
-        const b_span = parse_forward_span(s_n2, memory_view, parse_state);
+    const compute = (s1, action, s2) => {
+        const parseState = {cur: 0, max: 65536};
+        const a = spanParseForward(s1, memoryView, parseState);
+        const b = spanParseForward(s2, memoryView, parseState);
 
         let result;
-        switch (s_act) {
-        case 'add': result = ACTION_add(instance, memory_view, a_span, b_span); break;
-        case 'sub': result = ACTION_sub(instance, memory_view, a_span, b_span); break;
-        case 'mul': result = ACTION_mul(instance, memory_view, a_span, b_span, parse_state.i); break;
-        case 'div': result = ACTION_div(instance, memory_view, a_span, b_span); break;
-        case 'mod': result = ACTION_mod(instance, memory_view, a_span, b_span); break;
-        default: throw new Error(`unknown action: ${s_act}`);
+        switch (action) {
+        case 'add': result = ACTION_add(instance, memoryView, a, b); break;
+        case 'sub': result = ACTION_sub(instance, memoryView, a, b); break;
+        case 'mul': result = ACTION_mul(instance, memoryView, a, b, parseState.cur); break;
+        case 'div': result = ACTION_div(instance, memoryView, a, b); break;
+        case 'mod': result = ACTION_mod(instance, memoryView, a, b); break;
+        default: throw new Error(`unknown action: ${action}`);
         }
 
-        const abs_str = stringify_span(memory_view, result.span);
-        return (result.negative ? '-' : '') + abs_str;
+        const absStr = spanStringify(memoryView, result.span);
+        return (result.negative ? '-' : '') + absStr;
     };
 
     form.onsubmit = () => {
-        const s_n1 = document.getElementById('n1').value;
-        const s_act = document.getElementById('act').value;
-        const s_n2 = document.getElementById('n2').value;
-
+        const n1 = document.getElementById('n1');
+        const act = document.getElementById('act');
+        const n2 = document.getElementById('n2');
         const answer = document.getElementById('answer');
-        answer.innerHTML = '';
 
+        answer.innerHTML = '';
         try {
-            const s_result = work(s_n1, s_act, s_n2);
-            answer.append(s_result);
+            const resultText = compute(n1.value, act.value, n2.value);
+            answer.append(resultText);
         } catch (err) {
-            const span = _from_html('<span class="error"></span>');
-            span.append(`${err.name}: ${err.message}`);
-            answer.appendChild(span);
+            answer.appendChild(fromHtml(`
+                <span class="error">
+                    ${htmlEscape(`${err.name}: ${err.message}`)}
+                </span>`));
         }
 
         return false;
     };
 
-    const root_div = document.getElementById('root');
-    root_div.innerHTML = '';
-    root_div.appendChild(form);
-    root_div.appendChild(_from_html(`<p>
-        This is a demo of
-            <a href="https://github.com/shdown/libdeci">libdeci</a>,
+    const rootDiv = document.getElementById('root');
+    rootDiv.innerHTML = '';
+    rootDiv.appendChild(form);
+    rootDiv.appendChild(fromHtml(`
+        <p>This is a demo of <a href="https://github.com/shdown/libdeci">libdeci</a>,
         a big decimal library for C, compiled for WebAssembly.</p>`));
 }
 
+//---------------------------------------------------------------------------------------
+
+const reportError = (text) => {
+    const rootDiv = document.getElementById('root');
+    rootDiv.prepend(fromHtml(`<div class="error">${htmlEscape(text)}</div>`));
+};
+
+const installGlobalErrorHandler = () => {
+    window.onerror = (errorMsg, url, lineNum, columnNum, errorObj) => {
+        reportError(`Error: ${errorMsg} @ ${url}:${lineNum}:${columnNum}`);
+
+        console.log('Error object:');
+        console.log(errorObj);
+
+        return false;
+    };
+};
+
 document.addEventListener('DOMContentLoaded', () => {
-    install_global_error_handler();
-    async_main()
-        .catch((err) => {
-            report_error(`Error: ${err.name}: ${err.message}`);
-            throw err;
-        });
+    installGlobalErrorHandler();
+    asyncMain().catch((err) => {
+        reportError(`Error: ${err.name}: ${err.message}`);
+        throw err;
+    });
 });
