@@ -243,11 +243,14 @@ void deci_add_scaled(
     deci_UWORD y,
     deci_UWORD *wz, deci_UWORD *wz_end);
 
-// Subtracts ((wz ... wz_end) times 'y') from (wx ... implied_wx_end), modifying the latter.
+// Subtracts ((wz ... wz_end) times 'y') from (wx ... wx_end), modifying the latter.
 //
 // Assumes (y < DECI_BASE); otherwise, the behavior is undefined.
 //
 // Assumes (wx_end - wx) >= (wz_end - wz); otherwise, the behavior is undefined.
+//
+// Return the "borrow" word: the word that would have to be subtracted from (*wx_end), if it was
+// legal to access.
 deci_UWORD deci_sub_scaled_raw(
         deci_UWORD *wx, deci_UWORD *wx_end,
         deci_UWORD y,

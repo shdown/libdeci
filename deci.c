@@ -183,12 +183,6 @@ void deci_mul(
 //  * https://surface.syr.edu/cgi/viewcontent.cgi?article=1162&context=eecs_techreports
 // ---------------------------------------------------------------------------------------
 
-// Subtracts from (wx ... wx_end) the value of ('y' times (wz ... wz_end)), modifying the former.
-//
-// Return the "borrow" word: the word that would have to be subtracted from (*wz_end), if it was
-// legal to access.
-//
-// Assumes 0 <= ((wx_end - wx) - (wz_end - wz)) <= 1.
 deci_UWORD deci_sub_scaled_raw(
         deci_UWORD *wx, deci_UWORD *wx_end,
         deci_UWORD y,
