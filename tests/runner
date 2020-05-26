@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+
+opwd=$PWD
+cd -- "$(dirname -- "$(readlink -- "$0" || printf '%s\n' "$0")")" || exit $?
+shopt -s failglob
+
+REPO_ROOT=..
+PREFIX=()
+
+run_on_testcase() {
+    local d=$1 # driver
+    local i=$2/input # input file
+    local e=$2/output # expected output
+    local o # actual output file
+    o=$(tempfile) || return $?
+
+    echo >&2 ">>> Running on $2"
+
+    "${PREFIX[@]}" "$d" interact < "$i" > "$o"
+    local rc=$?
+    if (( rc )); then
+        rm -f -- "$o"
+        return -- "$rc"
+    fi
+
+    local ret=0
+    if ! cmp -- "$o" "$e"; then
+        echo >&2 "[ERROR] Output is different from expected:"
+        echo >&2
+        diff -u -- "$o" "$e"
+        ret=1
+    fi
+
+    rm -f -- "$o"
+    return -- "$ret"
+}
+
+run_on_catalog() {
+    local d=$1 # driver
+    local c=$2 # testcase catalog dir
+    local t # testcase dir
+    for t in "$c"/*/; do
+        run_on_testcase "$d" "$t" || return $?
+    done
+}
+
+case "$1" in
+'')
+    ;;
+c)
+    kcov_dir="$REPO_ROOT"/coverage
+    kcov_opts=( --include-path="$REPO_ROOT" )
+    PREFIX=( kcov "${kcov_opts[@]}" "$kcov_dir" )
+    rm -rf -- "$kcov_dir" || exit $?
+    ;;
+v)
+    PREFIX=( valgrind -q --leak-check=full --error-exitcode=42 )
+    ;;
+*)
+    echo >&2 "USAGE: $0 [c | v]"
+    exit 2
+    ;;
+esac
+
+run_on_catalog ./driver_32 testcases_32 || exit $?
+
+wb=$(./driver_native wordbits) || exit $?
+if [[ $wb == 32 ]]; then
+    run_on_catalog ./driver_native testcases_64 || exit $?
+fi
+
+echo >&2 "All tests passed."

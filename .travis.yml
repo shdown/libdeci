@@ -1,0 +1,9 @@
+dist: bionic
+language: c
+compiler:
+  - gcc
+  - clang
+script:
+  - cd tests
+  - make
+  - ./runner
