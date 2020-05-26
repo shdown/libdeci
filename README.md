@@ -32,10 +32,23 @@ decimal numbers, you will still need the “basecase” algorithms.
 
   * If you are crunching very large *decimal* numbers with fancy algorithms, most likely you are
 doing something wrong: binary arithmetics is native for computers, so consider using
-[GMP](https://gmplib.org/) or [LibBF](https://bellard.org/libbf/) in the first place; or,
-alternatively, convert “to bits” before doing costly computation, and convert the result back
-afterwards.
+[GMP](https://gmplib.org/) in the first place; or, alternatively, convert “to bits” before doing
+costly computation, and convert the result back afterwards.
 
   * Fancy algorithms introduce complexity.
 
   * Fancy algorithms allocate extra memory.
+
+## But still, what’s your plan?
+
+  * [Karatsuba algorithm](https://gmplib.org/manual/Karatsuba-Multiplication#Karatsuba-Multiplication) for multiplication.
+
+  * [Divide-and-conquer algorithm](https://gmplib.org/manual/Divide-and-Conquer-Division#Divide-and-Conquer-Division) for division.
+
+  * [Divide-and-conquer algorithms](http://www.numberworld.org/y-cruncher/internals/radix-conversion.html)
+for decimal-to-binary and binary-to-decimal radix conversion.
+Note that in order to use those to convert *to* binary, you need to be able to multiply big binary
+numbers; and in order to convert *from* binary, you need to be able to divide big binary numbers.
+We recommend using [GMP](https://gmplib.org/) for that (more specifically, the
+[low-level functions](https://gmplib.org/manual/Low_002dlevel-Functions) operating directly on
+`mp_limb_t` spans).
