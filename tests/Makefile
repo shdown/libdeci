@@ -1,5 +1,5 @@
 SOURCES := driver.c ../deci.c
-HEADERS := ../deci.h ../deci_quad_arith.h
+HEADERS := ../deci.h
 CFLAGS := -std=c99 -Wall -Wextra -Og -g3
 
 all: driver_native driver_32

@@ -61,7 +61,7 @@
 // non-obvious invariants.
 
 #if ! defined(DECI_WE_ARE_64_BIT)
-#   if UINTPTR_MAX == 0xFFFFFFFFFFFFFFFFul
+#   if UINTPTR_MAX == 0xFFFFFFFFFFFFFFFFul && !defined(_MSC_VER)
 #       define DECI_WE_ARE_64_BIT 1
 #   else
 #       define DECI_WE_ARE_64_BIT 0
@@ -99,6 +99,7 @@ typedef uint32_t            deci_UWORD;
 typedef int32_t             deci_SWORD;
 typedef uint64_t            deci_DOUBLE_UWORD;
 typedef int64_t             deci_DOUBLE_SWORD;
+typedef unsigned __int128   deci_QUAD_UWORD;
 #define DECI_BASE_LOG 9
 #define DECI_WORD_BITS 32
 #define DECI_DOUBLE_WORD_BITS 64
@@ -120,6 +121,7 @@ typedef uint16_t deci_UWORD;
 typedef int16_t  deci_SWORD;
 typedef uint32_t deci_DOUBLE_UWORD;
 typedef int32_t  deci_DOUBLE_SWORD;
+typedef uint64_t deci_QUAD_UWORD;
 #define DECI_BASE_LOG 4
 #define DECI_WORD_BITS 16
 #define DECI_DOUBLE_WORD_BITS 32

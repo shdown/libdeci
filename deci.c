@@ -18,11 +18,6 @@
  */
 
 #include "deci.h"
-#include "deci_quad_arith.h"
-
-#if !defined(DECI_HAVE_DUMB_COMPILER)
-#   define DECI_HAVE_DUMB_COMPILER 1
-#endif
 
 #define SWAP(Type_, X_, Y_) \
     do { \
@@ -42,20 +37,11 @@ CARRY adc(deci_UWORD *a, deci_UWORD b, CARRY carry)
 {
     const deci_UWORD x = *a + b + CARRY_TO_1BIT(carry);
     const deci_SWORD d = x - DECI_BASE;
-#if DECI_HAVE_DUMB_COMPILER
+
     // 'result' is minus one if (d >= 0), zero otherwise.
     const deci_SWORD result = (~d) >> (deci_SWORD) (DECI_WORD_BITS - 1);
     *a = x - (DECI_BASE & result);
     return result;
-#else
-    if (d >= 0) {
-        *a = d;
-        return -1;
-    } else {
-        *a = x;
-        return 0;
-    }
-#endif
 }
 
 // subtract with borrow
@@ -63,20 +49,11 @@ static inline DECI_FORCE_INLINE
 BORROW sbb(deci_UWORD *a, deci_UWORD b, BORROW borrow)
 {
     const deci_SWORD d = *a - b - BORROW_TO_1BIT(borrow);
-#if DECI_HAVE_DUMB_COMPILER
+
     // 'result' is minus one if (d < 0), zero otherwise.
     const deci_SWORD result = d >> (deci_SWORD) (DECI_WORD_BITS - 1);
     *a = d + (DECI_BASE & result);
     return result;
-#else
-    if (d < 0) {
-        *a = d + DECI_BASE;
-        return -1;
-    } else {
-        *a = d;
-        return 0;
-    }
-#endif
 }
 
 bool deci_add(
@@ -222,6 +199,12 @@ deci_DOUBLE_UWORD combine(deci_UWORD w1, deci_UWORD w2)
     return w1 * ((deci_DOUBLE_UWORD) DECI_BASE) + w2;
 }
 
+static inline DECI_FORCE_INLINE
+deci_QUAD_UWORD combine_to_quad(deci_DOUBLE_UWORD x1, deci_DOUBLE_UWORD x2)
+{
+    return x1 * ((deci_QUAD_UWORD) DECI_BASE) * DECI_BASE + x2;
+}
+
 static inline deci_UWORD estimate_quotient(
         deci_UWORD r1,
         deci_DOUBLE_UWORD r23,
@@ -231,8 +214,7 @@ static inline deci_UWORD estimate_quotient(
     if (r1 == 0) {
         q = r23 / b12;
     } else {
-        deci_QUAD_UWORD r123 = deci_q_from_2w_2w(r1, r23);
-        q = deci_q_div_d_to_d(r123, b12);
+        q = combine_to_quad(r1, r23) / b12;
     }
     return q < (DECI_BASE - 1) ? q : (DECI_BASE - 1);
 }
@@ -388,9 +370,9 @@ deci_DOUBLE_UWORD deci_long_tobits_round(deci_DOUBLE_UWORD *wd, deci_DOUBLE_UWOR
 
     while (wd_end != wd) {
         --wd_end;
-        const deci_QUAD_UWORD x = deci_q_from_2w_2w(carry, *wd_end);
-        *wd_end = deci_q_bin_hi_2w(x);
-        carry = deci_q_bin_lo_2w(x);
+        deci_QUAD_UWORD x = combine_to_quad(carry, *wd_end);
+        *wd_end = x >> DECI_DOUBLE_WORD_BITS;
+        carry = (deci_DOUBLE_UWORD) x;
     }
 
     return carry;
