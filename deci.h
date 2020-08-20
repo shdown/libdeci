@@ -451,8 +451,8 @@ deci_UWORD *deci_skip0(deci_UWORD *wa, deci_UWORD *wa_end)
 
 // The compiler doesn't know we are not going to copy around/zero out gigabytes of deci_UWORD's,
 // so for non-constant sizes it inserts calls to actual 'memset()'/'memcpy()'/'memmove()' functions,
-// which are in theory can be more "optimal" than inline loops for very big sizes, but in reality
-// the function call itself just trashes the hell out of the cache.
+// which can in theory be more "optimal" than inline loops for very big sizes, but in reality the
+// function call itself just trashes the hell out of cache.
 //
 // So we provide the "small, dumb and ready to be inlined" versions of the memory manipulation
 // functions specifically for 'deci_UWORD' spans.
