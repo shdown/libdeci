@@ -41,7 +41,9 @@ costly computation, and convert the result back afterwards.
 
 ## But still, what’s your plan?
 
-  * [Karatsuba algorithm](https://gmplib.org/manual/Karatsuba-Multiplication#Karatsuba-Multiplication) for multiplication.
+  * For multiplication, we have:
+   - [libdeci-kara](https://github.com/shdown/libdeci-kara) that implements intermediate-fanciness multiplication via Karatsuba algorithm;
+   - [libdeci-ntt](https://github.com/shdown/libdeci-ntt) that implements high-fanciness multiplication via the number-theoretic transform (variant of Fourier transform).
 
   * [Divide-and-conquer algorithm](https://gmplib.org/manual/Divide-and-Conquer-Division#Divide-and-Conquer-Division) for division.
 

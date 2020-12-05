@@ -98,14 +98,18 @@ bool deci_sub_raw(
     return true;
 }
 
-void deci_uncomplement(deci_UWORD *wa, deci_UWORD *wa_end)
+bool deci_uncomplement(deci_UWORD *wa, deci_UWORD *wa_end)
 {
-    for (; *wa == 0; ++wa)
-        ;
+    for (; wa != wa_end; ++wa)
+        if (*wa)
+            goto nonzero;
+    return false;
+nonzero:
     *wa = DECI_BASE - *wa;
     ++wa;
     for (; wa != wa_end; ++wa)
         *wa = DECI_BASE - 1 - *wa;
+    return true;
 }
 
 void deci_add_scaled(

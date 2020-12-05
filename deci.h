@@ -183,9 +183,9 @@ bool deci_sub_raw(
 //
 //     * the number of '000' words in the minuend is equal to (wa_end - wa).
 //
-// Assumes that (wa ... wa_end) does not represent the value of zero, i.e., that it contains at
-// least one non-zero word; otherwise, the behavior is undefined.
-void deci_uncomplement(deci_UWORD *wa, deci_UWORD *wa_end);
+// If (wa ... wa_end) represents the value of zero, returns false and does not alter the span.
+// Otherwise, performs the modification described above and returns true.
+bool deci_uncomplement(deci_UWORD *wa, deci_UWORD *wa_end);
 
 // Subtracts two (deci_UWORD*) spans, writing the result into (wa ... wa_end).
 //
@@ -208,7 +208,7 @@ bool deci_sub(
 {
     const bool underflow = deci_sub_raw(wa, wa_end, wb, wb_end);
     if (underflow)
-        deci_uncomplement(wa, wa_end);
+        (void) deci_uncomplement(wa, wa_end);
     return underflow;
 }
 
