@@ -47,7 +47,10 @@ costly computation, and convert the result back afterwards.
 
     - [libdeci-ntt](https://github.com/shdown/libdeci-ntt) that implements high-fanciness multiplication via the number-theoretic transform (variant of Fourier transform).
 
-  * [Divide-and-conquer algorithm](https://gmplib.org/manual/Divide-and-Conquer-Division#Divide-and-Conquer-Division) for division.
+  * For division, we have [libdeci-newt](https://github.com/shdown/libdeci-newt).
+   It implements fancy division via Newton’s method.
+   Note that it requires that a fast (sub-quadratic) multiplication routine be passed as a callback.
+   Use either [libdeci-kara](https://github.com/shdown/libdeci-kara) or [libdeci-ntt](https://github.com/shdown/libdeci-ntt) for that.
 
   * [Divide-and-conquer algorithms](http://www.numberworld.org/y-cruncher/internals/radix-conversion.html)
 for decimal-to-binary and binary-to-decimal radix conversion.
