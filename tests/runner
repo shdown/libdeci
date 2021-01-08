@@ -12,7 +12,7 @@ run_on_testcase() {
     local i=$2/input # input file
     local e=$2/output # expected output
     local o # actual output file
-    o=$(tempfile) || return $?
+    o=$(mktemp) || return $?
 
     echo >&2 ">>> Running on $2"
 
