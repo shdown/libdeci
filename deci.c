@@ -163,6 +163,73 @@ void deci_mul(
 //  * https://skanthak.homepage.t-online.de/division.html
 //  * https://surface.syr.edu/cgi/viewcontent.cgi?article=1162&context=eecs_techreports
 // ---------------------------------------------------------------------------------------
+//
+// Following is my interpretation of the statement, with proof.
+//
+// Theorem (three-by-two).
+//
+//   Fix the base B \in \N, B > 1.
+//   Fix also x \in R, y \in R, such that:
+//     * 0 \le x < B^3;
+//     * B \le y < B^2;
+//     * x/y < B.
+//   Define:
+//     * q = floor(x / y), the true quotient;
+//     * q_e = floor(floor(x) / floor(y)), our estimate of the quotient.
+//   Then either (q = q_e) or (q = q_e - 1).
+//
+// Proof.
+//
+//   Lemma 1.
+//     q \le q_e.
+//   Proof.
+//     Define \delta = frac(x). Note that 0 \le \delta < 1.
+//     We have
+//       x/y \le x / floor(y) = (floor(x) + \delta) / floor(y).
+//     Then
+//       q = floor(x/y) \le floor((floor(x) + \delta) / floor(y)).
+//     We now want to prove
+//       floor((floor(x) + \delta) / floor(y)) = floor(floor(x) / floor(y)).
+//     Since \delta < 1, for any integers M, N, K, the following holds:
+//       (M < KN) \implies ((M + \delta) < KN).
+//     Substitute M = floor(x), N = floor(y), K = floor(M/N).
+//
+//   Lemma 2.
+//     floor(x) < B*(floor(y) + 1).
+//   Proof.
+//     floor(x) \le x < B*y < B*(floor(y) + 1).
+//
+//   Define now the following:
+//     * u = floor(x);
+//     * v = floor(y);
+//     * q_max = (u + 1) / v;
+//     * q_min = u / (v + 1).
+//
+//   Lemma 3.
+//     The following statements hold:
+//       [stmt 1] q_max - u/v \le 1/B;
+//       [stmt 2] u/v - q_min < 1.
+//   Proof.
+//     [stmt 1] (u+1)/v - u/v = 1/v \le 1/B.
+//     [stmt 2] u/v - u/(v+1) = u/(v*(v+1)). By lemma 2, u < B*(v+1), so
+//         u/v - q_min < (B*(v+1))/(v*(v+1)) = B/v \le 1.
+//
+//   Lemma 4.
+//     q \ge q_e - 1.
+//   Proof.
+//     We have:
+//       * q_min < x/y < q_max;
+//       * q_min < u/v < q_max.
+//     Taking floor of both sides of these inequalities, we get:
+//       * floor(q_min) \le q   \le floor(q_max);
+//       * floor(q_min) \le q_e \le floor(q_max).
+//     By lemma 3, q_max - q_min < 1 + 1/B < 2. This means that
+//       floor(q_max) - floor(q_min)
+//     is either 0, 1, or 2. We are only interested in the case of it being equal to 2, as in other
+//     cases (q \ge q_e - 1) holds automatically. If so, and q_e - q = 2, then:
+//       * floor(q_max) = q_e = floor(u/v), which implies u/v \ge q_e = q + 2;
+//       * floor(q_min) = q, which implies q_min < q + 1.
+//     Combined, these statements imply u/v - q_min > 1, contradicting lemma 3.
 
 deci_UWORD deci_sub_scaled_raw(
         deci_UWORD *wx, deci_UWORD *wx_end,
