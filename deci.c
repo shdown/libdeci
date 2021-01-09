@@ -168,8 +168,8 @@ void deci_mul(
 //
 // Theorem (three-by-two).
 //
-//   Fix the base B \in \N, B > 1.
-//   Fix also x \in R, y \in R, such that:
+//   Fix the base B \in \mathbb{N}, B > 1.
+//   Fix also x \in \mathbb{R}, y \in \mathbb{R}, such that:
 //     * 0 \le x < B^3;
 //     * B \le y < B^2;
 //     * x/y < B.
