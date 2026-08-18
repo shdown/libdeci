@@ -192,7 +192,7 @@ void deci_mul(
 //       floor((floor(x) + \delta) / floor(y)) = floor(floor(x) / floor(y)).
 //     Since \delta < 1, for any integers M, N, K, the following holds:
 //       (M < KN) \implies ((M + \delta) < KN).
-//     Substitute M = floor(x), N = floor(y), K = floor(M/N).
+//     Substitute M = floor(x), N = floor(y), K = floor(M/N) + 1.
 //
 //   Lemma 2.
 //     floor(x) < B*(floor(y) + 1).
